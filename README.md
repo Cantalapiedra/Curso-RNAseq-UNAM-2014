@@ -9,4 +9,4 @@ En el HOWTO_1 se realiza la comprobacion de calidad de los reads, asi como un pr
 
 En el HOWTO_2 se lleva a cabo un ensamblaje de novo de los reads de secuenciacion, con el programa Trinity. A continuacion, se realinean los reads al ensamblaje para comprobar la calidad de este por visualizacion de algunos mapeos mediante la herramienta IGV.
 
-En el HOWTO_3 
+En el HOWTO_3 se utiliza GMAP para alinear los contigs obtenidos en el ensamblaje de novo, para compararlos con ua referencia de calidad que tengamos, y así comprobar la calidad del ensamblaje. Posteriormente, se aprovecha el alineamiento para realizar una anotacion estructural de nuestros ensamblajes, y se visualizan los resultados con IGB y GenomeViewer
