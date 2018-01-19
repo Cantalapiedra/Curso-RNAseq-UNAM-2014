@@ -5,4 +5,6 @@ Sería conveniente comenzar a leer el LEEME, para luego comenzar por los HOWTO e
 
 En el HOWTO_0 se obtienen los datos con los que se trabaja el resto del curso, y se echa un primer vistazo al aspecto de un ficheros con reads de secuenciacion. Ademas, se cuenta el numero de reads y se comprueba que cada read cuenta con su pareja.
 
-En el HOWTO_1
+En el HOWTO_1 se realiza la comprobacion de calidad de los reads, asi como un preprocesamiento de los datos para eliminar aquellos reads de peor calidad. Para ello se utilizan las herramientas FastQC y Trimmomatic. A continuacion, se realiza un paso opcional para tratar de corregir errores de secuenciacion, mediante la herramienta Musket.
+
+
