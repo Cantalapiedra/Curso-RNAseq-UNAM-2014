@@ -1,0 +1,192 @@
+#
+# Los datos de RNASeq se pueden utilizar tambien para
+# la busqueda de variantes. En este sentido, se puede
+# considerar como un metodo de reduccion de complejidad
+# que desvia el muestreo hacia la fraccion codificante
+# del genoma.
+# La deteccion de polimorfismos en secuencia codificante
+# tiene a menudo mas posibilidad de tener un impacto
+# en el fenotipo.
+#
+
+#
+################# 5.1) Eliminacion de duplicados con samtools rmdup
+#
+
+cd /space16/"usuario"/;
+mkdir variant_calling;cd variant_calling;
+
+# Enlazamos a los mapeos realizados con TopHat2:
+
+ln -s ../tophat_mappings/os_call_tophat_out/accepted_hits.bam \
+os_call_tophat.bam;
+
+ln -s ../tophat_mappings/os_boot_tophat_out/accepted_hits.bam \
+os_boot_tophat.bam;
+
+# Vamos a trabajar primero con la muestra de callo:
+
+muestra="os_call"
+
+# Los reads duplicados serian aquellos cuyas coordenadas de mapeo
+# coinciden exactamente. Es de suponer que la probabilidad de que
+# dos reads tengan el mismo tamanyo y origen es	muy reducida,
+# si realmente proceden de dos fragmentos distintos y
+# no, por ejemplo, de un mismo clon de PCR.
+#
+# Con rmdup se detectan	dichos reads duplicados	y se mantiene 
+# un solo representante	de ellos en la muestra.
+
+samtools rmdup -S $muestra"_tophat.bam" $muestra"_tophat.rmdup.bam";
+
+# La salida del rmdup nos mostrara el numero de duplicados detectados
+# y su proporcion en la muestra. Lo cual nos sirve como medida
+# indirecta de la proporcion de reads eliminados.
+#
+# Puedes ademas contar el numero de reads con el que nos hemos quedado:
+
+samtools view $muestra"_tophat.rmdup.bam" | cut -f 1 | \
+sort | uniq | wc -l;
+
+#
+############################### 5.2) El formato mpileup
+#
+
+# http://samtools.sourceforge.net/mpileup.shtml
+#
+# Sin embargo la documentacion mas completa del formato
+# viene en:
+# http://samtools.sourceforge.net/samtools.shtml#3
+# donde se explica el comando "samtools mpileup"
+
+# Creamos un indice de nuestro genoma de arroz
+
+ln -s /space16/cperez/oryza/references/9311.fa genome.fa;
+samtools faidx genome.fa;
+
+# A continuacion ejecutamos el comando "mpileup" de 
+# samtools para generar una salida plana
+
+samtools mpileup -f genome.fa $muestra"_tophat.rmdup.bam" \
+ > $muestra"_tophat.rmdup.mpileup.tab";
+
+ln -s /space16/cperez/variant_calling_2/$muestra"_tophat.rmdup.mpileup.tab"
+
+# Como vemos, se genera un fichero de texto muy pesado
+# En cada linea tenemos una posicion de mapeo procedente del BAM
+# En el primer campo se indica la secuencia de referencia, mientras
+# el segundo campo es la posicion sobre la que al menos una base
+# de nuestros reads ha mapeado. El tercer campo es la base de
+# la referencia y el cuarto es la profundidad de cobertura
+# de nuestros reads sobre esa base.
+# Los ultimos dos campos indican el tipo de match de la base
+# de cada uno de los reads sobre la base de referencia, y 
+# la calidad del mapeo en escala Phred.
+#
+# El quinto campo contiene un simbolo distinto en cada
+# posicion segun el evento que se de para un read concreto:
+#
+# Con un "." o una "," se indica que la base es la misma 
+# que la de la referencia. Con ">" o "<" se indicarian
+# los saltos en la referencia (intrones por ejemplo).
+# "ACTGN" en mayuscula o minuscula seria un mismatch.
+# Las inserciones de los reads se indican con un "+"
+# seguido de la longitud de la insercion y la secuencia
+# del inserto. Analogamente, con un "-" se indican las deleciones.
+# Ademas, "^" indica el comienzo de un read en esa posicion, 
+# seguido de la calidad del mapeo del read mediante un simbolo.
+# Finalmente, con un "$" se indica que en dicha posicion acaba
+# el read.
+#
+# Trata de visualizar una posicion de un SNP, por ejemplo:
+
+cat $muestra"_tophat.rmdup.mpileup.tab" | grep --color "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG";
+
+# Y una zona posiblemente de un intron:
+
+cat $muestra"_tophat.rmdup.mpileup.tab" | grep --color ">>>>>><>>>>>>>>>>>>><>>>>>>>>>>>" | less;
+
+#
+############################# 5.3) Busqueda de variantes
+#
+
+# En este caso vamos a realizar el analisis para una sola
+# muestra, como si tuvieramos un solo individuo.
+#
+# Con la opcion "-g" le decimos a samtools que calcule
+# los likelihoods del genotipo, y que genere a partir
+# de ellos un fichero BCF. Con "-D" pedimos que incluya
+# la informacion de profundidad de cobertura
+
+# Coger de resultados ya generados lo correspondiente a:
+#samtools mpileup -D -gf genome.fa $muestra"_tophat.rmdup.bam" \
+# > $muestra"_tophat.rmdup.bcf";
+
+ln -s /space16/cperez/variant_calling_2/$muestra"_tophat.rmdup.bcf";
+
+# A continuacion, con el comando view de BCFTools 
+# vamos a generar otro bcf (-b) y que calcule las
+# variantes y los genotipos (-cg) mostrando unicamente
+# ya las variantes encontradas
+
+bcftools view -bvcg $muestra"_tophat.rmdup.bcf" > \
+$muestra"_tophat.rmdup.variants.bcf"
+
+# Finalmente, convertimos el BCF comprimido a VCF
+# En el formato VCF, del cual el BCF es un equivalente
+# en binario, hay un identificador de la variante, asi como
+# la calidad de esta, su posicion en la referencia y 
+# los alelos correspondientes. Hay un campo con informacion
+# adicional, como la profundidad de cobertura (DP o DP4),
+# o la calidad consenso (FQ), etcetera.
+
+bcftools view -v $muestra"_tophat.rmdup.variants.bcf" > \
+$muestra"_tophat.rmdup.variants.vcf";
+
+###
+
+# A continuacion, vamos a repetir lo mismo para los ficheros
+# en los que no hemos eliminado los duplicados.
+
+# Coger de resultados ya generados lo correspondiente a:
+#samtools mpileup -D -gf genome.fa $muestra"_tophat.bam" \
+# > $muestra"_tophat.bcf";
+
+ln -s /space16/cperez/variant_calling_2/$muestra"_tophat.bcf";
+
+bcftools view -bvcg $muestra"_tophat.bcf" > \
+$muestra"_tophat.variants.bcf"
+
+bcftools view -v $muestra"_tophat.variants.bcf" > \
+$muestra"_tophat.variants.vcf";
+
+# ¿Podrias contar el numero de SNPs e INDELs por separado 
+# para comparar las muestras y estas con sus versiones rmdup
+# correspondientes?
+
+#
+####################### 5.4) Visualizacion de ficheros VCF
+#
+
+# Elige el visualizador que mas te convenza de los que hemos
+# visto y compara de un vistazo las dos muestras 
+# a partir de los "rmdup.vcf"
+
+# Para IGV necesitaras crear un indice del VCF.
+# Esto se puede hacer con igvtools o tabix, por ejemplo.
+# Con igvtools:
+
+/space16/cperez/soft/IGVTools/igvtools index "fichero.vcf"
+
+# Deberia generar un "ficher.vcf.idx"
+# Luego simplemente abrimos el ".vcf" desde IGV, que
+# detecta en el mismo directorio el ".vcf.idx"
+
+# Para el resto de programas se abre como ya hemos hecho para 
+# los ficheros de anotacion estructural
+
+# En clase tambien vimos Tasuke:
+# http://tasuke.dna.affrc.go.jp/index.php/Main_Page
+
+#
+# Fin del tutorial

@@ -1,0 +1,78 @@
+####### TUTORIAL RNAseq Cuernavaca 20140121 CPC
+
+# En primer lugar, es recomendable trabajar con 2 terminales,
+# uno para leer los ficheros del tutorial,
+# otro para ir ejecutando comandos.
+#
+# Vamos a trabajar con los datos de la carpeta 
+# /space16/cperez/oryza/samples/
+# Puedes ver el contenido de este directorio con:
+
+ls -l /space16/cperez/oryza/samples/;
+
+# Como veras hay cuatro ficheros FastQ en dicha carpeta.
+# En este tutorial vamos a trabajar con dos muestras distintas
+# de arroz (Oryza sativa L. ssp indica cv 9311).
+# 
+# Los sufijos _1 y _2 en los ficheros indican los dos pares
+# de reads que corresponden a cada experimento de secuenciacion
+# paired-end. Por tanto:
+
+# SRR037717 son reads de un experimento con muestras de callo.
+# SRR037732 son reads de un experimento con muestras de espiga que
+# 	esta comenzando el encanyado, esto es, la fase reproductiva.
+
+# Ambas son muestras obtenidas con Illumina Genome Analyzer
+# con reads pareados de 75 nucleotidos cada par (2x75) y un 
+# tamanyo de inserto de unos 170-200 bases.
+
+# Mi recomendacion es que cada alumno comience a trabajar con 
+# una muestra, y segun sea su ritmo podria empezar a repetir
+# segmentos mas o menos largos del tutorial sobre la otra muestra.
+# Por favor, NO realizar analisis de ambas muestras a la vez
+# ya que habra una serie de recursos computacionales para todos 
+# los alumnos. Gracias!
+
+# Si quieres ampliar la informacion sobre las muestras y el
+# experimento, he incluido el articulo correspondiente en el 
+# directorio /space16/cperez/oryza/
+# aunque veremos algunos datos en la presentacion
+
+# Para empezar a trabajar, crea un directorio separado en tu carpeta
+# de /space16. Algo como:
+
+mkdir /space16/"usuario"/rnaseq/;
+
+# Y accede a dicho directorio. Seria:
+
+cd /space16/"usuario"/rnaseq/;
+
+# Puedes seguir el seminario llevando a cabo las tareas de los 
+# ficheros "HOWTO_" 
+# del directorio /home/cperez/docs/
+
+ls -l /home/cperez/docs/
+
+# Como veras, cada "HOWTO_" tiene un numero asignado.
+# Lo mejor es que vayas siguiendo el orden numerico de estos ficheros.
+# Para hacerlo, crea un enlace simbolico al fichero con el que 
+# vayas a trabajar en cada momento. 
+# Por ejemplo, para empezar:
+
+ln -s /home/cperez/docs/HOWTO_0_DATOS_SIMPLES;
+less HOWTO_0_DATOS_SIMPLES;
+
+# Con "less" podemos leer el fichero si el enlace se ha creado
+# correctamente. Puedes moverte por el fichero con las flechas
+# del teclado, por ejemplo. Para salir del programa "less" simplemente
+# teclea "q".
+
+# Cuando acabes con un tutorial, podras quitar el enlace (si 
+# te estorba) con, por ejemplo:
+
+#unlink HOWTO_0_DATOS_SIMPLES;
+
+# Y a continuacion, empezar con el siguiente creando un enlace 
+# simbolico como antes :)
+
+# Buen trabajo!

@@ -1,0 +1,419 @@
+#
+# Hasta el momento hemos estado trabajando para obtener un 
+# ensamblaje de novo, que despues hemos comparado con el genoma
+# de arroz.
+#
+# Sin embargo, tambien podemos utilizar dicha referencia para mapear
+# directamente nuestros reads sobre ella.
+#
+
+#
+############################ 4.1) Mapeo de los reads con TopHat2
+#
+
+# Vamos a mapear los reads sobre el genoma de arroz con TopHat2:
+# http://tophat.cbcb.umd.edu/
+
+# Creamos un nuevo directorio de trabajo
+
+cd /space16/"usuario"/;
+mkdir tophat_mappings;
+cd tophat_mappings;
+
+# Hacemos los enlaces a los ficheros con los reads
+
+ln -s /space16/cperez/new_assembly/os_call_p1.fastq;
+ln -s /space16/cperez/new_assembly/os_call_p2.fastq;
+ln -s /space16/cperez/new_assembly/os_call_s.fastq;
+
+# En primer lugar, necesitamos adecuar el formato de nuestros
+# reads al que solicita el programa (debemos pasar el indicador
+# de pareja de los reads de "/1 y /2" a "_1 y _2"). Esta vez
+# lo vamos a hacer con un "oneliner" de perl:
+
+cat os_call_p1.fastq | perl -lne'my $div = $.%4; if ($div == 1) {s/\/1$/_1/, s/\/2$/_2/, print $_;} else {print $_;}' > os_call_p1.tophat.fastq; \
+cat os_call_p2.fastq | perl -lne'my $div = $.%4; if ($div == 1) {s/\/1$/_1/, s/\/2$/_2/, print $_;} else {print $_;}' > os_call_p2.tophat.fastq; \
+cat os_call_s.fastq | perl -lne'my $div = $.%4; if ($div == 1) {s/\/1$/_1/, s/\/2$/_2/, print $_;} else {print $_;}' > os_call_s.tophat.fastq;
+
+# Esto es equivalente a:
+#cat os_call_p1.fastq" | sed 's#\(^@SRR.*\)\(/1\)#\1_1#' \
+#> os_call_p1.tophat.fastq"; \
+#cat os_call_p2.fastq" | sed 's#\(^@SRR.*\)\(/2\)#\1_2#' \
+#> os_call_p2.tophat.fastq";
+#cat os_call_s.fastq" | sed \
+#-e 's#\(^@SRR.*\)\(/1\)#\1_1#' \
+#-e 's#\(^@SRR.*\)\(/2\)#\1_2#' \
+#> os_call_s.tophat.fastq";
+
+# Podemos quitar los enlaces:
+unlink os_call_p1.fastq; \
+unlink os_call_p2.fastq; \
+unlink os_call_s.fastq;
+
+# Al igual que pasaba con GMAP, con TopHat2 necesitamos un 
+# indice de la base de datos, de nuestro genoma de arroz,
+# para poder realizar los alineamientos. De hecho, TopHat2
+# no hace directamente los alineamientos, sino que utiliza
+# Bowtie2 para esto:
+# http://bowtie-bio.sourceforge.net/bowtie2/index.shtml
+#
+# Por tanto, debemos crear una base de datos con Bowtie2:
+
+mkdir bowtie_index;cd bowtie_index;
+
+# En primer lugar, copiamos nuestro genoma a este directorio
+
+cp /space16/cperez/oryza/references/9311.fa ./; # Esto es necesario para TopHat2
+
+# Despues lanzamos la creacion del indice:
+
+#bowtie2-build 9311.fa os_9311; # Esto llevaria unos 20 minutos
+
+# Vamos a hacer un enlace a un indice ya generado
+cd ../;
+rm -r bowtie_index/
+ln -s /space16/cperez/tophat_mappings/bowtie_index/
+
+# Hacemos el enlace a la anotacion:
+
+ln -s /space16/cperez/oryza/references/9311.fa.Glean.gff.filtered.gff \
+annot.gff;
+
+# Vamos a comprobar que los nombres de los cromosomas del
+# indice son los mismos
+# que los que aparecen en el fichero de anotacion, ya que esto
+# es importante para usar el GFF de anotacion del genoma de arroz
+# con TopHat2
+#
+# Comprobaremos solo los de los 12 cromosomas de arroz
+
+bowtie2-inspect --names bowtie_index/os_9311 | head -12 > os_9311.names;
+
+cat annot.gff | cut -f 1 | sort | uniq | head -12 > annot.gff.ids;
+
+# Si "diff" no devuelve nada es que la nomenclatura es la misma:
+
+diff annot.gff.ids os_9311.names;
+
+rm os_9311.names annot.gff.ids;
+
+# Desde tophat2.0.10 podemos crear el indice para la
+# anotacion estructural del transcriptoma directamente
+# sin necesidad mapear reads
+
+tophat2 -G annot.gff \
+--transcriptome-index=t_index/annot \
+bowtie_index/os_9311;
+
+rm -r tophat_out;
+
+# Una vez hecho esto ya podemos usar nuestros reads para mapear
+# NOTA: TopHat2 tambien permite usar los reads sin pareja
+# pero no los vamos a utilizar en este tutorial
+
+# Para mapear al genoma sin una referencia estructural
+# (por ejemplo, cuando tenemos el genoma secuenciado
+# y queremos ensamblar el transcriptoma a partir de
+# los mapeos):
+
+tophat2 -o os_call_tophat_genome_out -p 2 \
+--read-mismatches 4 --read-gap-length 4 --read-edit-dist 6 \
+--no-discordant --no-mixed \
+-r 100 \
+bowtie_index/os_9311 \
+os_call_p1.tophat.fastq os_call_p2.tophat.fastq;
+
+# Hariamos lo mismo para la otra muestra
+# (excepto la creacion de los indices, claro esta)
+
+# Contando con un transcriptoma de referencia
+# podriamos lanzar tophat utilizando el indice
+# del GFF que hemos creado:
+
+#tophat2 -o os_call_tophat_out -p 2 \
+#--transcriptome-index=t_index/annot \
+#--read-mismatches 4 --read-gap-length 4 --read-edit-dist 6 \
+#--no-discordant --no-mixed \
+#-r 100 \
+#bowtie_index/os_9311 \
+#os_call_p1.tophat.fastq os_call_p2.tophat.fastq
+
+# De nuevo, hacemos lo mismo para la otra muestra
+
+# Veamos el directorio de resultados
+
+ls -l os_call_tophat_out;
+
+# Tenemos varios BED con las junctions detectadas,
+# asi como posibles deleciones e inserciones
+#
+# Aqui se comenta un uso interesante del junctions.bed
+# y da referencias
+# http://vinaykmittal.blogspot.mx/2013/02/how-to-improve-rna-seq-alignment-using.html
+#
+# Hay un prep_reads.info en el que nos da algo de
+# informacion de los reads que ha preparado para
+# el mapeo
+#
+# Hay un directorio de logs con informacion
+# sobre la ejecucion del programa
+#
+# Finalmente, hay dos ficheros BAM:
+# accepted_hits.bam --> con los alineamientos
+# unmapped.bam --> con los reads no alineados
+# 
+# Desde las ultimas versiones de TopHat2 tambien aparece
+# un align_summary.txt, en el que podemos ver algunas estadisticas
+# del mapeo, como la tasa de alineamiento:
+
+cd os_call_tophat_out;
+cat align_summary.txt;
+
+# Cuantos reads han quedado sin mapear:
+
+samtools view unmapped.bam | wc -l;
+
+# Echa un vistazo a los numerosos flags de accepted_hits.bam
+# ¿Como separarias los reads con alineamiento unico?
+
+# Copiamos los alineamientos ya generados a nuestro directorio
+
+ln -s /space16/cperez/tophat_mappings/os_call_tophat_out/; \
+ln -s /space16/cperez/tophat_mappings/os_call_tophat_genome_out/; \
+ln -s /space16/cperez/tophat_mappings/os_boot_tophat_out/; \
+ln -s /space16/cperez/tophat_mappings/os_boot_tophat_genome_out/;
+
+# Podemos ver el contenido usando -H con ls:
+
+ls -lH os_call_tophat_out/; # Por ejemplo
+
+# Compara las estadisticas de los diferentes mapeos
+
+# 
+####################### 4.2) Ensamblaje estructural con Cufflinks
+#
+
+# Cufflinks: http://cufflinks.cbcb.umd.edu/
+# Utiliza la informacion de un mapeo en formato SAM
+# para ensamblar transcritos (aunque en formato estructural,
+# no proporciona secuencia directamente)
+# y estimar su abundancia.
+
+# La forma mas sencilla de ejecutar cufflinks es simplemente
+# aportando el fichero BAM como entrada.
+#
+# Tiene una serie de requisitos para las tags que estan asociadas
+# a los mapeos en el BAM. Estas las cumple directamente TopHat2,
+# pero podriamos utilizar ficheros BAM de otros mapeadores.
+
+#  Vamos a ejecutar cufflinks sobre los mapeos con TopHat2
+# que se hicieron directamente sobre el genoma, sin anotacion
+
+cufflinks \
+-o cufflinks_os_call_genome \
+os_call_tophat_genome_out/accepted_hits.bam
+
+# Con "-o" indicamos el directorio de los ficheros de
+# resultado.
+
+cd cufflinks_os_call_genome;
+ls -l;
+
+# Cufflinks generar varios ficheros de salida,
+# pero el que nos interesa para el ensamblaje del transcriptoma
+# es "transcripts.gtf".
+# El formato GTF es identico al GFF2 
+# http://www.ensembl.org/info/website/upload/gff.html
+#
+# y muy parecido a los GFF3 que ya hemos visto
+# Cufflinks genera dos tipos de feature: transcript
+# y exon.
+#
+# Podemos por tanto contar el numero de transcritos con:
+
+cat transcripts.gtf | cut -f 3 | grep -c "transcript";
+
+# Si necesitamos la secuencia de los transcritos podemos
+# usar gffread, el cual viene incluido con Cufflinks
+
+gffread -w transcripts.fa -g ../bowtie_index/9311.fa transcripts.gtf;
+
+cd ..;
+
+# Ademas, en el GTF vienen una serie de valores relacionados
+# con el FPKM, que son valores normalizados con los que
+# cufflinks mide la abundancia de los transcritos
+#
+# Tambien aparece un valor de profundidad de cobertura del transcrito
+# "cov"
+
+# Ademas, genera dos ficheros ".fpkm_tracking" en los que estan
+# los valores estimados de expresion de los genes y de las isoformas,
+# respectivamente, esta vez en formato tabular.
+
+# Cufflinks tiene una serie de parametros, bien relacionados
+# con el ensamblaje, bien con la estima de la abundancia de los
+# transcritos, que podemos modificar.
+#
+# Prueba por ejemplo a ejecutar lo ahora con:
+
+cufflinks \
+--min-frags-per-transfrag 0 \
+--trim-3-avgcov-thresh 0 \
+--trim-3-dropoff-frac 0.0 \
+-o cufflinks_os_call_genome \
+os_call_tophat_genome_out/accepted_hits.bam
+
+# Comprueba si cambia el numero de transcritos
+
+cat cufflinks_os_call_genome/transcripts.gtf | cut -f 3 | \
+grep -c "transcript";
+
+# Por otro lado, hemos hecho tambien mapeos con TopHat2
+# en los que hemos usado un GFF como referencia.
+#
+# Cufflinks tambien permite especificar un GFF que sirva
+# para el ensamblaje guiado por referencia.
+#
+# Vamos a comparar el resultado de Cufflinks cuando el GFF
+# se ha usado en TopHat2 con cuando se utiliza en Cufflinks
+#
+# Tophat GFF
+
+cufflinks \
+--min-frags-per-transfrag 0 \
+--trim-3-avgcov-thresh 0 \
+--trim-3-dropoff-frac 0.0 \
+-o cufflinks_os_call_gff \
+os_call_tophat_out/accepted_hits.bam
+
+cat cufflinks_os_call_gff/transcripts.gtf | cut -f 3 | \
+grep -c "transcript";
+
+# Cufflinks GFF
+
+cufflinks -g annot.gff \
+--min-frags-per-transfrag 0 \
+--trim-3-avgcov-thresh 0 \
+--trim-3-dropoff-frac 0.0 \
+-o cufflinks_os_call_genome_g \
+os_call_tophat_genome_out/accepted_hits.bam
+
+# Numero de transcritos en ambos casos:
+# Para GFF en TopHat2:
+
+cat cufflinks_os_call_gff/transcripts.gtf | cut -f 3 | \
+grep -c "transcript";
+
+# Para GFF en Cufflinks:
+
+cat cufflinks_os_call_genome_g/transcripts.gtf | cut -f 3 | \
+grep -c "transcript";
+
+# ¿Que ocurre cuando usamos la opcion "-g" de Cufflinks?
+
+#
+########################## 4.3) Comparando anotaciones con Cuffcompare
+#
+
+# Junto con Cufflinks hay otra serie de programas que podemos
+# utilizar. Uno de ellos, Cuffcompare, permite comparar los 
+# transcriptomas generados con uno de referencia, o entre
+# distintos experimentos.
+#
+# Por ejemplo, vamos a comparar los tres transcriptomas que
+# hemos generado con el de referencia de arroz:
+
+cuffcompare -r annot.gff cufflinks_os_call_genome/transcripts.gtf;
+
+# Veamos el fichero cuffcmp.stats
+
+mv cuffcmp.stats cuffcmp_os_call_genome.stats;
+cat cuffcmp_os_call_genome.stats;
+
+# Ademas del stats, Cuffcompare genera varios ficheros mas,
+# por ejemplo cuffcmp.tracking en el que aparecen las relaciones entre
+# los transcritos de las muestras y la referencia en formato tabular
+# O, en el directorio donde esta el gtf de la muestra, 
+# los ficheros "refmap" y "tmap", relacionando las referencias
+# y los transcritos de forma reciproca para cada muestra individual
+#
+# Comprueba los resultados para las otros ensamblajes:
+
+cuffcompare -r annot.gff cufflinks_os_call_genome_g/transcripts.gtf;
+
+mv cuffcmp.stats cuffcmp_os_call_genome_g.stats;
+cat cuffcmp_os_call_genome_g.stats;
+cat cuffcmp.loci | wc -l;
+
+# Y:
+
+cuffcompare -r annot.gff cufflinks_os_call_gff/transcripts.gtf;
+
+mv cuffcmp.stats cuffcmp_os_call_gff.stats;
+cat cuffcmp_os_call_gff.stats;
+cat cuffcomp.loci | wc -l;
+
+# Finalmente, vamos a generar el ensamblaje para la otra muestra,
+# a partir de los datos de TopHat2 con mapeo sobre el genoma
+# sin anotacion:
+
+cufflinks \
+--min-frags-per-transfrag 0 \
+--trim-3-avgcov-thresh 0 \
+--trim-3-dropoff-frac 0.0 \
+-o cufflinks_os_boot_genome \
+os_boot_tophat_genome_out/accepted_hits.bam
+
+# 
+
+cuffcompare cufflinks_os_call_genome/transcripts.gtf \
+cufflinks_os_boot_genome/transcripts.gtf;
+
+cat cuffcmp.stats;
+cat cuffcomp.loci | wc -l;
+
+#
+############################### 4.4) Uniendo las anotaciones
+#
+
+# Finalmente, podemos utilizar Cuffmerge para unir las anotaciones
+# de que disponemos para un organismo.
+
+# Para utilizar Cuffmerge hay que crear primero un fichero .txt
+# en el que se indiquen las muestras que se van a unir,
+# una en cada linea. Por ejemplo, si hiciera "cat" de dicho fichero
+# para unir las anotaciones de nuestras dos muestras solamente,
+# como ocurriria cuando generariamos una primer transcriptoma:
+
+nano samples.txt
+
+# Anyadimos en el fichero las lineas:
+cufflinks_os_call_genome/transcripts.gtf
+cufflinks_os_boot_genome/transcripts.gtf
+# Guardamos y salimos
+
+# Entonces ya podemos unir ambas anotaciones en un transcriptoma
+# global:
+
+cuffmerge samples.txt;
+
+# El resultado de cuffmerge quedara en el directorio
+# merged_asm. Compara:
+
+cat merged_asm/merged.gtf | wc -l;
+
+# Con lo que teniamos antes con las muestras por separado:
+
+cat cufflinks_os_call_genome/transcripts.gtf | cut -f 3 | grep -c "exon";
+cat cufflinks_os_boot_genome/transcripts.gtf | cut -f 3 | grep -c "exon";
+
+# Si ademas disponemos de una anotacion anterior, a la que queremos
+# anyadir los nuevos elementos:
+
+cuffmerge -g annot.gff samples.txt;
+
+# ¿Cuantos exones teniamos en annot.gff y cuantos tenemos ahora?
+
+#
+# Fin de este tutorial

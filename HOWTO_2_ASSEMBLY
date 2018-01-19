@@ -1,0 +1,225 @@
+#
+########################### 2.1) Transcriptoma de novo con Trinity
+#
+# http://trinityrnaseq.sourceforge.net/
+
+muestra="os_call"
+
+# Ejecutamos el programa para que genere la salida en trinity_out
+# Solo estamos usando los reads que estan en parejas
+
+Trinity.pl --output $muestra"_trinity_out" --seqType fq --JM 32G --CPU 20 \
+--left $muestra"_p1.fastq" --right $muestra"_p2.fastq";
+
+# Si lo quisieramos hacer tambien con los reads sin pareja, los
+# singles, localizamos nuestro fichero de reads y ejecutamos:
+
+Trinity.pl --output $muestra"_singles_trinity_out" --seqType fq \
+--JM 8G --CPU 20 \
+--single $muestra"_s.fastq";
+
+# NOTA: con la version de Trinity que hemos usado, que es la 
+# ultima a la fecha, no se puede hacer un ensamblaje que utilice
+# tanto los singles como las parejas.
+
+# Hicimos tambien un ensamblaje con los reads crudos
+
+#Trinity.pl --output $muestra"_raw_trinity_out" --seqType fq \
+#--JM 8G --CPU 20 \
+#--left $muestra"_1.fastq" --right $muestra"_2.fastq";
+
+# Trinity genera muchos ficheros en el output
+# Aunque podemos decirle que elimine o conserve mas o menos
+#
+# Por ahora vamos a centrarnos en la salida principal,
+# el FASTA con los contigs "Trinity.fasta"
+
+cd $muestra"_trinity_out";
+cat Trinity.fasta | grep "^>" | less
+
+# Con el comando anterior, deberiamos ver las cabeceras
+# de los contigs, las cuales nos aportan
+# informacion acerca de la estructura del transcriptoma generado.
+# Por ejemplo:
+#
+#>comp9716_c0_seq1 len=232 path=[5890042:0-231]
+#>comp9716_c1_seq1 len=268 path=[5890886:0-19 5890888:20-267]
+#>comp9716_c1_seq2 len=341 path=[5889467:0-92 5890888:93-340]
+#
+# El componente 9716 tiene 2 subcomponentes c0 y c1.
+# Para c0 se ha encontrado una secuencia, mientras que
+# para c1 se han encontrado dos secuencias.
+# Despues se indica la longitud y el camino del grafo por el que
+# se han resuelto las secuencias.
+#
+# Si cada componente es un gen, cada subcomponente una isoforma
+# etcetera, aunque es algo que habria que analizar mas en detalle
+#http://seqanswers.com/forums/showthread.php?t=19129
+
+# Por ahora, podemos obtener una serie de estadisticas sobre el ensamblaje
+# con el TrinityStats.pl del directorio "util" de Trinity:
+
+/usr/local/trinity/util/TrinityStats.pl Trinity.fasta > Trinity.stats
+
+# Para verlas, basta con un cat, less o more sobre Trinity.stats
+
+less Trinity.stats;
+
+# Para interpretar los valores NXX (ej.: Contig N50: 355) hay que pensar que
+# el 50% de las bases que estan en los contigs, lo estan en contigs
+# de tamaño igual o mayor a 355.
+# OJO! No confundir esto con "el 50% de los contigs tienen 355 de longitud o mas"
+# porque no es lo mismo, eso seria la mediana, que por lo general va a ser menor.
+# Por ejemplo:
+#
+#Contig N50: 355
+#Median contig length: 284
+
+#
+############################# 2.2) Realineamiento de reads
+#
+
+# El siguiente paso que podriamos llevar a cabo y que es un paso estandar
+# del pipeline de Trinity, seria realinear los reads a los transcritos
+# para tener una idea de la calidad del ensamblaje.
+# Aunque se genera todo en un directorio bowtie_out/, 
+# como puede interesar generar mas ficheros de estos datos,
+# yo suelo crear otro subdirectorio para trabajar en el:
+
+mkdir realign/;
+cd realign/;
+
+# Tambien creo en el, por comodidad, enlaces simbolicos a los reads:
+
+ln -s ../../$muestra"_p1.fastq"; \
+ln -s ../../$muestra"_p2.fastq";
+
+/usr/local/trinity/util/alignReads.pl \
+--left $muestra"_p1.fastq" --right $muestra"_p2.fastq" --seqType fq \
+--target ../Trinity.fasta --aligner bowtie --retain_intermediate_files
+
+# El script anterior alinea los reads contra los contigs
+# del ensamblaje de Trinity, mediante el mapeador bowtie
+# http://bowtie-bio.sourceforge.net/index.shtml
+#
+# Como resultado, crea un directorio bowtie_out/ con muchos ficheros.
+# Entre ellos muchos ficheros BAM (o en su version sin comprimir SAM)
+# Fijate que los ficheros SAM ocupan mucho mas espacio que los BAM.
+# Son ficheros con alineamientos de los reads a los contigs.
+# El formato SAM/BAM es un estandar y todos los mapeadores de reads
+# por lo general pueden producirlo. Sin embargo, como se usan algunos
+# de los campos de estos ficheros puede variar, asi como la incorporacion
+# de campos exclusivos de unos mapeadores u otros.
+#
+# La documentacion del formato SAM general esta en 
+# http://samtools.sourceforge.net/SAMv1.pdf‎
+# si bien habria que completarla con la informacion concreta
+# del mapeador que estemos usando (la cual en algunos casos es exhaustiva
+# y en otros escasa y cambiante entre versiones)
+
+# A partir del SAM con los alineamientos ordenados por nombre de read
+# podemos generar unas pocas estadisticas con:
+
+/usr/local/trinity/util/SAM_nameSorted_to_uniq_count_stats.pl \
+bowtie_out/bowtie_out.nameSorted.sam > realign.stats;
+
+# En "realign.stats" es importante que el porcentaje de "proper_pairs"
+# sea alto, pues indicaria que la mayoria de los reads que tenemos
+# alinean correctamente a los contigs generados, con la orientacion
+# y el tamaño de inserto esperados.
+# Tambien es importante fijarse en el "Total aligned reads"
+# ya que podremos compararlo con el numero de reads que tenemos
+# y asi ver que porcentaje de reads no parecen formar parte
+# del ensamblaje.
+
+cat realign.stats;
+
+# Repite 2.1 y 2.2 para la otra muestra, y compara las
+# estadisticas
+#
+# Tambien seria interesante hacer el ensamblaje con los
+# reads crudos de al menos una de las muestras para comparar
+# las estadisticas, y ver si en principio nos ha servido
+# para algo todo el proceso de preprocesamiento, aunque
+# no tendriamos la certeza de que ensamblaje es mejor hasta
+# realizar alineamientos en los siguientes tutoriales.
+
+###
+
+# Finalmente, vamos a eliminar lo que ya no nos sirve
+# moviendo los resultados a un nuevo directorio
+# "_trinity_results" para cada muestra bajo nuestra carpeta
+# "rnaseq/"
+
+muestra="os_call"
+
+cd ../;
+mkdir $muestra"_trinity_results";
+mv $muestra"_trinity_out"/Trinity.fasta \
+$muestra"_trinity_out"/Trinity.fasta.fai \
+$muestra"_trinity_out"/Trinity.stats \
+$muestra"_trinity_out"/realign/realign.stats \
+$muestra"_trinity_out"/realign/bowtie_out/bowtie_out.coordSorted.bam \
+$muestra"_trinity_out"/realign/bowtie_out/bowtie_out.coordSorted.bam.bai \
+$muestra"_trinity_results"
+
+rm -r $muestra"_trinity_out";
+
+# Repite esto mismo para la otra muestra
+
+#
+########################## 2.3) Visualizacion de mapeos con IGV
+#
+
+# Finalmente, puede ser muy interesante, especialmente si tenemos
+# sospechas de que algo raro ocurre, visualizar los alineamientos
+# ya que podemos hacernos una idea general de la calidad del ensamblaje
+#
+# Un visualizador muy popular en NGS es el IGV 
+# http://www.broadinstitute.org/igv/
+#
+# Para visualizar el realineamiento con IGV hay que crear un 
+# indice para el FASTA de los contigs, que hacen las veces de referencia
+# y hay que ordenar e indexar el BAM con los alineamientos.
+#
+# Esto se puede hacer con igvtools o directamente con samtools
+
+samtools faidx Trinity.fasta;
+
+# (NOTA: si nos fijamos en realign/bowtie_out/ tenemos varios BAM
+# uno de ellos ordenado por coordenadas e indexado, que es lo que requiere
+# el IGV por lo que no tendriamos que hacer nada mas).
+# Si por lo que fuera necesitaramos
+# ordenar e indexar un BAM ser haria, respectivamente, con:
+
+#samtools sort BAM > OUT_PREFIX
+#samtools index BAM > OUT
+
+# Ahora podemos abrir el IGV con el fichero igv.sh del directorio de 
+# la distribucion de IGV
+
+igv.sh
+
+# En IGV es muy sencillo cargar un transcriptoma como el que tenemos
+
+#Genomes-->Load Genome From File...
+# elegir un FASTA y pulsar "Abrir"
+
+# asi como cargar los alineamientos:
+
+#File-->Load From File...
+# seleccionar el BAM y pulsar "Abrir"
+
+# En el IGV podremos ver los reads alineados a los contigs
+# y hay un codigo de colores que nos permite localizar rapidamente
+# mismatches y otros posibles problemas. 
+
+#http://www.broadinstitute.org/software/igv/interpreting_insert_size
+#http://www.broadinstitute.org/software/igv/interpreting_pair_orientations
+
+# Tambien vemos una pista
+# de profundidad que genera automaticamente el IGV sin necesidad
+# de crear un fichero de profundidades.
+
+#
+# Fin de este tutorial

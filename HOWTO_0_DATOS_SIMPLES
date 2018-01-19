@@ -1,0 +1,286 @@
+#
+# Vamos a comenzar viendo algunos datos basicos de las muestras
+# para ademas ir cogiendo el ritmo de trabajo.
+# 
+
+#
+############################### 0.1) Unas notas sobre el origen 
+############################### de las muestras
+#
+
+# En este tutorial vamos a trabajar con muestras de un experimento
+# cuyos datos se subieron al repositorio de secuencias del NCBI
+# (NCBI SRA). Sin embargo, cuando trabajemos con nuestras propias
+# muestras, estas procederan del servicio de secuenciacion que nos
+# facilitara los datos.
+
+# Si las muestras proceden del NCBI SRA
+# lo que obtenemos al descargar los datos
+# son ficheros en formato SRA.
+# Para poder trabajar con ellos, habria que convertir los SRA a FASTQ
+#
+# Esto lo podemos hacer con un comando (fastq-dump) que viene 
+# incluido en el sratoolkit que podemos descargar del NCBI.
+# http://eutils.ncbi.nih.gov/Traces/sra/?view=software
+
+# Lo ejecutariamos de la siguiente manera:
+
+#fastq-dump --split-files $1.sra;
+
+# Esto nos generaria 2 ficheros FASTQ, 
+# uno para los READ1 y otro para los READ2
+# de cada pareja de reads del experimento.
+# Esto es exactamente lo que encontramos en el directorio
+# de las muestras con los que trabajaremos en este tutorial.
+
+# Por otro lado, cuando los archivos proceden de un servicio de
+# secuenciacion, suelen darnoslos ya en formato FASTQ
+# pero comprimidos.
+# No todos los programas de NGS son capaces de trabajar con ficheros
+# comprimidos, por lo que podriamos querer inicialmente descomprimir
+# los datos.
+# NOTA: esto es documentacion, los archivos
+# con los que trabajaremos ya estan descomprimidos.
+# 
+# Si por ejemplo, vinieran comprimidos en formato GZIP, los 
+# descomprimiriamos con:
+#gunzip $1"_1.gz";
+#gunzip $1"_2.gz";
+
+#
+############################# 0.2) Preparacion
+#
+
+# ATENCION: como vamos a trabajar todos con los mismos datos,
+# es importante que no hagais ninguna modificacion en los ficheros
+# originales.
+
+# Vamos a crear enlaces simbolicos a los ficheros de las muestras
+# para poder trabajar con ellos mas comodamente:
+# (aqui estoy dando por supuesto que nos encontramos cada uno en 
+# nuestro directorio de trabajo, algo como /space16/"usuario"/rnaseq/)
+
+ln -s /space16/cperez/oryza/samples/SRR037717_1.fastq os_call_1_raw.fastq;
+ln -s /space16/cperez/oryza/samples/SRR037717_2.fastq os_call_2_raw.fastq;
+ln -s /space16/cperez/oryza/samples/SRR037732_1.fastq os_boot_1_raw.fastq;
+ln -s /space16/cperez/oryza/samples/SRR037732_2.fastq os_boot_2_raw.fastq;
+
+# Hemos llamado a los enlaces "os_" de Oryza sativa y
+# "call_" de callus (callo) y "boot_" de booting panicle (espiga en
+# fase de encanyado). Asi es mas agradable trabajar que con los 
+# nombres "SRR0377...".
+
+# Deberiamos poder ver los enlaces y a donde apuntan con:
+
+ls -l
+
+#
+############################### 0.3) Un primer vistazo a los datos
+#
+# A continuación vamos a mostrar algo de informacion sobre los reads
+# y asi vamos calentando dedos ;)
+#
+
+# Todos los pasos a continuacion se llevaran a cabo sobre la muestra 
+# SRR037317 ("os_call"). Para ellos vamos a crear una variable con
+# el nombre de la muestra con la que estaremos trabajando:
+
+muestra="os_call";
+
+# Cuando quieras repetir los pasos de este tutorial para la otra
+# muestra, puedes ir cambiar el valor de esta variable
+# o incluso puedes copiar todos los pasos a un script que reciba el
+# nombre de la muestra como parametro.
+
+# Podemos comprobar que hemos creado bien la variable si al escribir:
+
+echo $muestra
+
+# Tenemos como respuesta "os_call".
+
+###
+
+# A continuacion, echamos un vistazo al primer y ultimo read de
+# cada pareja, para ver que los ficheros parecen
+# estar bien. Esto ademas nos puede aportar informacion como:
+#
+# - La longitud esperada de los reads a menudo viene indicada
+#	en la cabecera
+# - Que formato se utiliza para diferenciar el READ1
+#	del READ2 en cada pareja
+# - Si la cabecera es mas larga de lo que es necesario para
+#	diferenciar cada READ*.
+# - Si la linea separadora de la secuencia y las calidades
+#	esta en formato completo o breve (solo un "+")*.
+#
+# 	* Piensa que si son ficheros muy grandes, 
+#	acortando por ejemplo la cabecera o la linea separadora
+#	podemos ahorrar muchos bytes de almacenamiento.
+
+# Para el READ1, escribe todas las lineas siguientes y despues presiona
+# "Intro":
+
+echo; echo "########## Read 1:"; echo; echo "first"; \
+head -4 $muestra"_1.fastq" | awk '{print "\t"$0}'; \
+echo; echo "last"; \
+tail -4 $muestra"_1.fastq" | awk '{print "\t"$0}'; \
+echo;
+
+# Para el READ2:
+
+echo; echo "########## Read 2:"; echo; echo "first"; \
+head -4 $muestra"_2.fastq" | awk '{print "\t"$0}'; \
+echo; echo "last"; \
+tail -4 $muestra"_2.fastq" | awk '{print "\t"$0}'; \
+echo;
+
+# En los dos comandos anteriores, la informacion se obtiene
+# basicamente con los programas "head" y "tail". Con "echo"
+# y "awk" lo que hacemos es dar formato a la salida para hacerla
+# mas legible.
+
+###
+
+# Cambiamos las cabeceras y los separadores de los reads originales
+# para tener el identificador de READ1 y READ2 y tambien liberar
+# espacio en disco.
+
+muestra="os_call";
+cat $muestra"_1_raw.fastq" | sed 's#\(^@SRR.*\) .* .*#\1/1#' > $muestra"_1.fastq";
+cat $muestra"_2_raw.fastq" | sed 's#\(^@SRR.*\) .* .*#\1/2#' > $muestra"_2.fastq";
+muestra="os_boot";
+cat $muestra"_1_raw.fastq" | sed 's#\(^@SRR.*\) .* .*#\1/1#' > $muestra"_1.fastq";
+cat $muestra"_2_raw.fastq" | sed 's#\(^@SRR.*\) .* .*#\1/2#' > $muestra"_2.fastq";
+
+# Este proceso puede tardar un rato por la gran cantidad de reads de RNASeq.
+# Podemos ejecutar esas lineas individualmente en trasfondo quitando el ";"
+# y anyadiendo " &" (fijate en el espacio antes del ampersand).
+# 
+# UNA VEZ ACABEN, podemos ya eliminar los enlaces simbolicos a los archivos originales
+
+muestra="os_call";
+unlink $muestra"_1.raw.fastq";
+unlink $muestra"_2.raw.fastq";
+# Repetir para la otra muestra: muestra="os_boot"...
+
+###
+
+# Ahora vamos a aislar las lineas que contienen los
+# identificadores. Lo vamos a hacer con "awk" y 
+# su variable NR que indica el numero de linea del archivo
+# que se esta leyendo.
+
+cat $muestra"_1.fastq" | awk '{if (NR%4==1) print $0}' | \
+sed 's#^@##' > $muestra"_1.ids";
+cat $muestra"_2.fastq" | awk '{if (NR%4==1) print $0}' | \
+sed 's#^@##' > $muestra"_2.ids";
+
+# Con el programa "ls" podemos ver que hemos creado ficheros
+# terminados en "ids" en los que estaran unicamente los 
+# identificadores de los reads.
+
+ls -l
+
+###
+
+# Contando los identificadores podemos contar el numero de reads
+# en cada fichero:
+
+cat $muestra"_1.ids" | wc -l > $muestra"_1.read_number"; \
+cat $muestra"_2.ids" | wc -l > $muestra"_2.read_number"; \
+echo; \
+cat $muestra"_1.read_number" | awk '{print "\tRead 1: "$1" reads."}'; \
+cat $muestra"_2.read_number" | awk '{print "\tRead 2: "$1" reads."}'; \
+echo;
+
+# Aunque hay muchas otras formas de contar los reads,
+# no es recomendable usar expresiones regulares con
+# el formato de cabecera de FastQ para este tipo de tareas, 
+# ya que "@" y "+", los caracteres con los que se inician los
+# identificadores y los separadores, respectivamente,
+# son tambien caracteres de las cadenas de calidad.
+#
+# Por ejemplo, podria dar un numero erroneo el siguiente comando: 
+#cat FASTQ_FILE | grep -c "^@"
+
+# En cambio teniendo en cuenta el numero de linea, 
+# como ya se ha hecho en el paso anterior para seleccionar las 
+# lineas de identificadores, cometeremos menos errores. Por ejemplo: 
+#cat FASTQ_FILE | awk '{if (NR%4==1) print $0}' | wc -l
+
+# En ese comando utilizarianos la variable "NR" de "awk", la cual
+# lleva cuenta el numero de linea que se esta procesando.
+# Si al dividir "NR" por 4 el resto es 1, entonces se trata de una
+# linea de identificador :)
+
+###
+
+# Finalmente, para asegurarnos de que las parejas son correctas
+# comprobamos que los identificadores de todos los reads coinciden.
+#
+# Primero eliminaremos el sufijo indicador del read de cada pareja, 
+# que en nuestras muestras son "/1" en el READ1 y "/2" en el READ2.
+# Esto se hace con el programa "sed" cambiando la expresion "/[12]"
+# por nada, vacio.
+#
+# Luego ordenamos ambas listas de identificadores con el programa
+# "sort". Esto es necesario para posteriomente comparar ambas listas
+# con el programa "diff".
+#
+# Si "diff" no muestra nada como salida, es que ambas listas de 
+# identificadores son iguales. Esto se comprueba en nuestro script
+# con la linea del "if" que comprueba que el resultado de "diff"
+# no tiene lineas ("wc -l" cuenta el numero de lineas de un archivo).
+#
+# NOTA: Este proceso tardará unos minutillos al estar filtrando
+# y ordenando bastantes identificadores
+
+echo; echo "Wait a minute..."; echo; \
+cat $muestra"_1.ids" | sed 's#/[12]##' | sort > $muestra"_1.ids_uniq"; \
+cat $muestra"_2.ids" | sed 's#/[12]##' | sort > $muestra"_2.ids_uniq"; \
+diff $muestra"_1.ids_uniq" $muestra"_2.ids_uniq" > $muestra".diff"; \
+if [ $(cat $muestra".diff" | wc -l;) -eq 0 ]; then \
+echo; echo "Both files have exactly the same read identifiers."; echo;
+else \
+echo; echo "There are differences between read pairs:"; echo; \
+cat $muestra".diff"; echo; \
+fi;
+
+# La salida del script deberia ser por tanto: 
+# "Both files have exactly the same read identifiers."
+
+# Finalmente, podemos eliminar los ficheros generados:
+# aunque si nos interesa podriamos conservar alguna
+# lista de identificadores ordenados y los ficheros
+# con el numero de reads en crudo:
+# 
+
+rm $muestra".diff"; \
+rm $muestra"_1.ids"; \
+rm $muestra"_1.ids_uniq"; \
+rm $muestra"_2.ids"; \
+rm $muestra"_2.ids_uniq"; \
+rm $muestra"_1.read_number"; \
+rm $muestra"_2.read_number";
+
+# A veces, sin embargo, podria interesarnos
+# conservar alguna lista de identificadores ordenados 
+# y los ficheros con el numero de reads en crudo. 
+
+#
+##################### 0.4) Informe de resultados
+#
+
+# ¿Serias capaz de rellenar los huecos entrecomillados
+# en el siguiente parrafo?
+
+Se obtuvieron muestras de RNA de "nombre completo del organismo"
+de los tejidos "tejido1" y "tejido2". Tras obtener el cDNA y realizar la
+preparacion de las librerias, se realizo la secuenciacion en 
+"nombre completo del secuenciador usado", obteniendose "numero de
+reads del tejido1" reads para el tejido "tejido1" y "numero de reads
+del tejido2" reads para el tejido "tejido2". El tamaño promedio de 
+inserto para ambas muestras fue de "tamaño de inserto aproximado"
+pares de bases.
+
+############################### Fin de este tutorial

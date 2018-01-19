@@ -1,0 +1,465 @@
+#
+# Si disponemos de secuencias de referencia, que puede ser un 
+# genoma, flcDNAs, ESTs, etc. podemos alinear nuestros contigs a dicha
+# referencia como forma de validacion, asi como una forma de detectar
+# posibles variantes existentes en nuestro nuevo transcriptoma:
+# genes no presentes en la referencia, nuevas variantes de splicing,
+# paralogos que se expresan en nuestros tejidos u ortologos
+# de nuestra especie, variedad o cultivar.
+#
+# Esto lo vamos a realizar en este tutorial con GMAP
+# http://research-pub.gene.com/gmap/
+# que es un 
+# alineador de secuencias que implementa la deteccion de intrones
+# por lo que es ideal para su uso con contigs de RNAseq
+#
+
+#
+####################### 3.1) Alineamiento de los contigs con GMAP
+#
+
+cd /space16/"usuario"/;
+mkdir annot_struct;
+cd annot_struct;
+
+# Hacer enlaces simbolicos a las referencias de Oryza sativa spp indica cv$
+ln -s /space16/cperez/oryza/references/9311.fa \
+genome.fa; \
+
+# Script de GMAP build
+# En clase ya lo hicimos el dia anterior, pero hariamos lo siguiente:
+#mkdir gmap_dbs/;
+#gmap_build -s none -d os_9311 -D gmap_dbs/ genome.fa
+
+# En clase, copiamos el indice ya creado a la carpeta actual ("./"):
+
+mv ../rnaseq/gmap_dbs/ ./;
+
+# Ahora vamos a copiar los resultados de Trinity de las distintas
+# muestras a nuestra carpeta.
+
+cp /space16/cperez/annot_struct/os_call_trinity.fasta \
+os_call_trinity.fasta;
+
+cp /space16/cperez/annot_struct/os_boot_trinity.fasta \
+os_boot_trinity.fasta;
+
+# A continuacion, alineamos nuestros contigs de Trinity
+# al genoma de arroz mediante GMAP.
+# Le indicamos que usaremos un thread (-t 1)
+# que queremos la salida en formato compacto "-Z"
+# y utilizamos filtros para la cobertura y la identidad minimas
+# para considerar un alineamiento como valido
+
+muestra="os_call";
+
+gmap -d os_9311 -D gmap_dbs/ -t 1 -Z \
+--min-trimmed-coverage=0.95 --min-identity=0.98 \
+$muestra"_trinity.fasta" \
+> $muestra"_gmap.compress.stdout" 2> $muestra"_gmap.compress.stderr"
+
+# A partir del fichero ".stderr" podemos obtener los identificadores
+# y el numero de secuencias no alineadas a nuestra referencia
+
+cat $muestra"_gmap.compress.stderr" | grep "No paths found" \
+| sed 's#No paths found for ##' > $muestra"_gmap.unmapped.ids";
+
+cat $muestra"_gmap.unmapped.ids" | wc -l > $muestra"_gmap.unmapped.count";
+
+# Para ver cuantas son:
+
+cat $muestra"_gmap.unmapped.count";
+
+# A continuacion, si estamos interesados, podriamos intentar
+# identificar dichas secuencias. No vamos a hacer blast exhaustivos
+# en este tutorial, pero puedes probar a buscar algunas secuencias
+# por ejemplo en el fichero de identificadores anterior y
+# alinearlas contra, por ejemplo, el NCBI
+# http://blast.ncbi.nlm.nih.gov/
+# o Uniprot en la pestanya "Blast"
+# http://www.uniprot.org/
+# Para extraer la secuencia, simplemente indica su identificador:
+
+identificador="comp682_c0_seq1"
+
+# Y ejecuta:
+
+cat os_call_trinity.fasta | \
+awk '{if ($0 ~ "^>") \
+{if ($0 ~ "'$identificador'") target=1; else target=0;} \
+if (target==1) print $0;}'
+
+# Esas secuencias pueden no haber sido alineadas por muchas razones,
+# incluyendo un mal ensamblaje, que nuestra referencia sea incompleta
+# y sean secuencias no presentes en ella o que no cumplan los 
+# criterios de filtrado que hemos especificado; o que procedan de 
+# contaminaciones, por ejemplo.
+# 
+# Podemos intentar recuperar algunas relajando los parametros de
+# filtrado de GMAP (--min-trimmed-coverage y --min-identity, 
+# por ejemplo). No parece que haya unos valores claros que nos permitan
+# delimitar el filtrado perfectamente, por lo que deberemos hacer
+# distintas pruebas y finalmente aceptar un cierto valor con un 
+# compromiso entre falsos positivos y falsos negativos, asi como
+# entre secuencias que alinean a un solo sitio del genoma 
+# o con mapeos multiples.
+
+# Vamos a ver las secuencias que si alinean
+# En el ".stdout" tenemos una cabecera para cada alineamiento
+# y luego unas lineas con la estructura de exones de nuestros contigs
+# Por el momento vamos a centrarnos en las cabeceras, que 
+# comienzan por el simbolo ">". Echa un vistazo a tu fichero:
+
+cat $muestra"_gmap.compress.stdout" | grep "^>" | less
+
+# Las cabeceras comienzan por el identificador del contig,
+# seguido del identificador de la referencia a la que esta alineado,
+# y despues los siguientes campos:
+# - Paths: "x/y". "y" indica el numero de alineamientos de esta secuencia
+#		  "x" indica que alineamiento en concreto es este.
+# - Longitud de la secuencia
+# - Numero de exones encontrados en este alineamiento
+# - Porcentaje de cobertura de la secuencia
+# - Porcentaje de identidad
+# - x..y: coordenadas del alineamiento sobre nuestra secuencia
+# - x..y: coordenadas del alineamiento sobre la referencia
+# - ref:x..y: secuencia (cromosoma, por ejemplo) a la que se ha alineado
+# 		y las coordenadas internas del alineamiento.
+# - [+|-]: hebra de la referencia sobre la que se alinea la secuencia
+# - dir:[indet|sense|antisense]: sentido del alineamiento
+# - Y un campo opcional que indica si se detecta como quimera:
+# 		"chimera:x..y"
+# GMAP detecta quimeras cuando dos partes de una secuencia alinean
+# a distintas secuencias (cromosomas, por ejemplo) o cuando
+# los fragmentos alinean en distintas partes de un cromosoma sin que
+# pueda explicarse por la estructura del transcrito, sino mas bien
+# por un ensamblado erroneo de la secuencia o posibles errores en 
+# la referencia (OJO: o quizas tambien reordenamientos reales)
+
+# Echa un vistazo a los mapeos de algunas quimeras. Por ejemplo,
+# para ver la primera:
+
+cat $muestra"_gmap.compress.stdout" | grep "^>" | \
+grep "chimera" | head -2;
+
+# Veras que para todas las quimeras, GMAP presenta dos alineamientos
+# aunque en algunos casos en realidad tienen mas:
+
+cat $muestra"_gmap.compress.stdout" | grep "chimera" | \
+grep "^>" | grep "/3";
+
+# Si intentamos ver el tercer alineamiento de la quimera 
+# no obtendremos ningun resultado.
+
+cat $muestra"_gmap.compress.stdout" | grep "chimera" | \
+grep "^>" | grep "3/3";
+
+# Vamos a separar las quimeras en un fichero aparte:
+
+cat $muestra"_gmap.compress.stdout" | grep "^>" | grep "chimera" \
+> $muestra"_gmap.chimera";
+
+# ¿Cuantas quimeras tenemos?
+
+cat $muestra"_gmap.chimera" | awk '{print $1}' | uniq | wc -l;
+
+# Ahora vamos a separar los alineamientos sin quimeras:
+
+cat $muestra"_gmap.compress.stdout" | grep "^>" | \
+grep -v "chimera" > $muestra"_gmap.mapped";
+
+# Ahora vamos a separar los contigs con un solo alineamiento
+# de los que alinean a varios sitios del genoma
+
+cat $muestra"_gmap.mapped" | awk '{if ($3!="1/1") print $0}' \
+> $muestra"_gmap.mapped.multiple"
+
+cat $muestra"_gmap.mapped" | awk '{if ($3=="1/1") print $0}' \
+> $muestra"_gmap.mapped.single"
+
+# Contamos cuantos son de cada tipo
+
+cat $muestra"_gmap.mapped.single" | awk '{print $1}' | \
+sort | uniq | wc -l > $muestra"_gmap.mapped.single.count"; \
+cat $muestra"_gmap.mapped.single.count";
+
+cat $muestra"_gmap.mapped.multiple" | awk '{print $1}' | \
+sort | uniq | wc -l > $muestra"_gmap.mapped.multiple.count"; \
+cat $muestra"_gmap.mapped.multiple.count";
+
+# Ahora ya sabemos cuales y cuantas de nuestros contigs alinean
+# una, mas de una o ninguna vez al genoma. 
+#
+# Podriamos escribir un script
+# que recupere de entre los alineamientos multiples, aquellos en los
+# que en realidad un alineamiento sea mejor que el otro, quizas por
+# la existencia de paralogos o variantes de splicing.
+# Por ejemplo: si tenemos dos alineamientos con cobertura e identidad:
+#
+# > 100.0 99.0
+# > 95.0 98.0
+#
+# Sin mas informacion adicional podriamos pensar que el 
+# primer alineamiento es mejor que el segundo.
+#
+# Sin embargo, si tuvieramos:
+#
+# > 97.0 98.0
+# > 95.0 99.5
+#
+# ¿Cuál de los dos alineamientos es el correcto?
+#
+# Para comparar los campos de identidad y cobertura
+# para cada secuencia y quedarnos con el mejor alineamiento, 
+# incorporandolo a nuestra lista de secuencias con alineamiento unico,
+# podriamos hacer un script en el lenguaje en que 
+# nos sintamos mas comodos, como Perl, Pytho, bash, ... 
+# aqui te proporciono un ejemplo en AWK.
+#
+# Echa un vistazo al fichero /home/cperez/soft/resolve_multiples.awk
+# para leer el codigo y ver lo que hace:
+
+less /home/cperez/soft/resolve_multiples.awk
+
+# A continuacion, como es un script escrito en awk
+# debemos usar el programa correspondiente para ejecutar
+# el script
+
+awk -f /home/cperez/soft/resolve_multiples.awk \
+$muestra"_gmap.mapped.multiple" > \
+$muestra"_gmap.mapped.single_recovered";
+
+# Veras que hemos recuperado unas cuantas secuencias como 
+# de alineamiento unico, al eliminar los alineamientos que tenian
+# peores valores de cobertura e identidad
+
+cat $muestra"_gmap.mapped.single_recovered" | wc -l;
+
+# Podemos tambien relajar los parametros de filtrado, por ejemplo
+# la identidad, para tratar de recuperar algunas de las secuencias
+# no alineadas:
+
+gmap -d os_9311 -D gmap_dbs/ -t 1 -Z \
+--min-trimmed-coverage=0.95 --min-identity=0.80 \
+$muestra"_trinity.fasta" \
+> $muestra"_gmap.paralogs.stdout" \
+2> $muestra"_gmap.paralogs.stderr";
+
+# Cuantas secuencias tenemos sin alinear ahora:
+
+cat $muestra"_gmap.paralogs.stderr" | grep "No paths found" \
+| sed 's#No paths found for ##' | wc -l;
+
+# Vamos a obtener los contigs que ahora alinean
+# pero no lo hacian con identidad por encima del 98%
+#
+# Primero eliminamos las quimeras:
+
+cat $muestra"_gmap.paralogs.stdout" | grep "^>" | \
+grep -v "chimera" > $muestra"_gmap.paralogs.mapped";
+
+# Luego usaremos el programa "join"
+# con la lista de secuencias no mapeadas anteriormente y
+# los nuevos resultados. Ambos ficheros requieren estar ordenados
+# por el mismo campo:
+
+cat $muestra"_gmap.paralogs.mapped" | sed 's#^>##' | \
+sort -k1,1 > $muestra"_gmap.paralogs.mapped.sorted";
+
+cat $muestra"_gmap.unmapped.ids" | sort -k1,1 \
+> tmp && mv tmp $muestra"_gmap.unmapped.ids.sorted";
+
+join $muestra"_gmap.unmapped.ids.sorted" \
+$muestra"_gmap.paralogs.mapped.sorted" > \
+$muestra"_gmap.paralogs.mapped.new";
+
+# Habremos obtenido un numero de nuevos alineamientos:
+
+cat $muestra"_gmap.paralogs.mapped.new" | wc -l;
+
+# Con un total de nuevas secuencias alineadas:
+
+cat $muestra"_gmap.paralogs.mapped.new" | awk '{print $1}' \
+| sort | uniq | wc -l;
+
+# Las cuales podriamos ahora incorporar a nuestras listas
+# de alineamientos unicos y multiples, o dejarlas apartadas
+# pudiendo analizarlas mas en profundidad en adelante,
+# por ejemplo mediante anotacion funcional, o alineamiento
+# a otras referencias de otros genotipos que nos puedan interesar
+
+###
+
+# Vamos a ordenar un poco los resultados obtenidos
+mkdir $muestra"_gmap_mappings/";
+
+mv $muestra"_gmap."* $muestra"_gmap_mappings/";
+
+#
+###################### 3.2) Anotacion estructural
+#
+
+# Hemos alineado los contigs de Trinity al genoma de arroz
+# y asi hemos podido clasificar algunas de nuestras secuencias
+#
+# A continuacion, obtendremos de GMAP un salida en formato GFF.
+# El formato GFF es, junto a otros como GTF, uno de los formatos
+# mas utilizados para anotacion estructural de distintos
+# elementos sobre un genoma, como pueden ser elementos repetitivos
+# o transcritos.
+#
+# http://www.sanger.ac.uk/resources/software/gff/spec.html
+# http://www.ensembl.org/info/website/upload/gff.html
+
+# Vamos a utilizar los parametros con identidad 80%
+# y cambiamos el formato de salida de la compacta "-Z"
+# al formato GFF3 para genes (-f 2)
+
+gmap -d os_9311 -D gmap_dbs/ -t 1 -f 2 \
+--min-trimmed-coverage=0.95 --min-identity=0.80 \
+$muestra"_trinity.fasta" \
+> $muestra"_gmap.gff" \
+2> $muestra"_gmap.gff.stderr";
+
+# Echa un vistazo a los resultados generados:
+
+less $muestra"_gmap.gff";
+
+# El primer campo de cada linea es el nombre de la secuencia diana
+# (cromosoma, por ejemplo).
+#
+# El segundo campo nos indica cual es la fuente de dicha secuencia,
+# en nuestro caso el genoma de arroz (os_9311).
+#
+# El tercer campo contiene el tipo de elemento (o feature) anotado
+# en cada linea: "gene", "mRNA", "exon", "CDS" se suelen usar para
+# transcritos, aunque a veces incluye tambien UTRs, etcetera.
+#
+# Los siguientes dos campos nos indican la posicion del feature.
+#
+# El siguiente campo, "score", es un valor que los programas pueden
+# asociar a un feature para calificarlo. En GMAP tienen score los
+# exones y CDS, y equivale al porcentaje de identidad del alineamiento
+# de dicho feature. El resto de features tienen el valor ".".
+#
+# El septimo campo indica la hebra del genoma sobre la que se anota
+# el elemento.
+#
+# A continuacion, el octavo campo indica el marco de lectura, 
+# por lo que tan solo aparece con un numero (0, 1 o 2) en los CDS, 
+# mientras en los demas elementos aparece como ".".
+#
+# Finalmente, hay un campo que se utiliza para informacion adicional,
+# con cada campo separado del resto por ";". 
+# En GMAP, los elementos "gene" tienen el nombre y el identificador.
+# Los elementos "mRNA" tienen identificador y nombre, ademas del 
+# identificador del "gene" al que pertenecen con el valor asignado
+# a "Parent". Ademas, se indica la cobertura e identidad del 
+# alineamiento.
+# En los "exon", ademas de lo anterior, se indica en "Target" el "gene"
+# al que pertenecen, asi como la posicion relativa sobre el.
+# Por ultimo, en los "CDS" se incluye informacion similar a la 
+# de los exones.
+#
+
+###
+
+rm $muestra"_gmap.gff.stderr";
+
+#
+# Haciendo lo mismo para la otra muestra podriamos tener la
+# anotacion estructural para poder comparar.
+# ¿Hay distintas variantes de splicing en un u otro tejido?
+#
+
+#
+########################## 3.3) Visualizacion con IGB
+#
+
+# Vamos a visualizar la anotacion generada con GMAP
+# junto con la anotacion del genoma de arroz con IGB
+# http://bioviz.org/igb/
+
+./run_igb.sh
+
+### Cargar el genoma:
+#
+# File --> Open Custom Genome
+#
+# Le indicamos en "Species name": Oryza sativa indica
+# En "Genome version" nos propone un prefijo, le anyadimos la version
+# En "Reference Sequence" le indicamos el fichero FASTA del genoma
+#
+# Marcar "switch to custom genome" y aceptar
+#
+# Pulsar "Load sequence"
+#
+### Cargar la anotacion del genoma:
+# 
+# File --> Open File...
+#
+# Seleccionar el gff del genoma y aceptar
+#
+### Cargar la anotacion de GMAP:
+#
+# File --> Open File...
+#
+# Seleccionar el gff de GMAP y aceptar
+#
+# Para ver los datos, viajar a la region de interes
+# y pulsar "Load data"
+
+#
+########################## 3.4) Visualizacion con GenomeViewer
+#
+
+# http://genomeview.org/
+
+java -Xmx1g -jar genomeview.jar
+
+# Pulsar "Work with my data"
+#
+# Pulsar "Local	files"
+#
+# Seleccionar el FASTA del genoma
+#
+# File --> Load	data...
+#
+# Seleccionar el GFF
+
+#
+######################### 3.5) Identificacion de ORFs de-novo
+#
+
+# Con Transdecoder
+# http://transdecoder.sourceforge.net/
+
+muestra="os_call";
+
+# Ejecutamos el programa sobre nuestros contigs ensamblados
+# con Trinity y nada mas
+
+/home/cperez/soft/transdecoder_rel16JAN2014/TransDecoder \
+--workdir transdecoder -t $muestra"_trinity.fasta";
+
+# El programa va a generar en el directorio indicado en --workdir
+# varios ficheros intermedios y auxiliares: 
+# base_freqs.dat por ejemplo nos indica la composicion en GC
+#                de los ORFs
+# hexamer.scores muestra la probabilidad de cada hexamero
+#                de ser codificante
+#
+# Los resultados principales los tendremos en el directorio
+# desde el que hemos ejecutado el programa, y seran anotaciones
+# estructurales en formato GFF3, un FASTA con los CDS detectados,
+# la anotacion en formato BED y, finalmente, un fichero PEP
+# con los peptidos correspondientes a los ORFs.
+#
+# Vamos a ver que elementos genera transdecoder y 
+# cual es su abundancia
+
+cat $muestra"_trinity.fasta.transdecoder.gff3" | \
+cut -f 3 | sort | uniq -c;
+
+# 
+# Fin del tutorial 3

@@ -1,0 +1,495 @@
+#
+# En el HOWTO_0 hemos trabajado un poco con la muestra y hemos
+# caracterizado algunos datos simples sobre los reads.
+#
+# En este tutorial vamos a empezar a modificar las muestras para
+# preparar los datos para analisis posteriores.
+#
+# Ademas, veremos que obtenemos tambien mas informacion util 
+# e interesante sobre las muestras.
+#
+
+# 
+########################## 1.1) Generar un informe con FastQC
+#
+
+# Comprobamos que la variable muestra tiene el valor de la
+# muestra que vamos a procesar.
+
+echo $muestra;
+
+# Si no es asi, le asignamos el valor deseado. Por ejemplo:
+
+muestra="os_call";
+
+# En primer lugar vamos a crear un informe de la muestra
+# que nos proporcionara datos numericos y graficas en relacion
+# a los reads. Esto lo haremos con el programa FastQC, que se
+# puede obtener de:
+#
+# http://www.bioinformatics.babraham.ac.uk/projects/fastqc/
+
+# Aunque podemos pasarle mas de un fichero al programa, 
+# solo los procesara por separado si le asignamos mas de un 
+# procesador con el parametro "-t", por ejemplo:
+#fastqc --nogroup -f fastq -t 2 \
+#$muestra"_1.fastq" $muestra"_2.fastq";
+
+# Como para este tutorial estamos muchos lo haremos por separado
+# y asi podremos ir inspeccionando un READ de la muestra
+# mientras procesamos el otro (aun asi le puede costar unos minutos, 
+# aunque deberia ir agilizandose a medida que eliminemos reads):
+
+# Comencemos creando el informe para el READ1 de la muestra:
+
+fastqc --nogroup -f fastq $muestra"_1.fastq";
+
+# Como vemos, FastQC habra generado un nuevo directorio con el 
+# sufijo "_fastqc" y el mismo directorio comprimido en "zip".
+# Podemos eliminar el archivo "zip":
+
+rm $muestra"_1_fastqc.zip";
+
+# Dentro de la carpeta del informe hay ficheros con los resultados
+# en formato texto ".txt" y web ".html". Ya que queremos ver las
+# graficas, trabajaremos con el fichero "fastqc_report.html".
+#
+# Para abrirlo podemos hacer dos cosas:
+# - Bien abrirlo con un navegador en remoto para que se abra
+# 	mediante las XWindows:
+#		firefox $muestra"_1_fastqc/fastqc_report.html" &
+# - Bien copiarlo a nuestro directorio "public_html" para abrir la
+# 	pagina con un navegador como otra pagina cualquiera.
+#
+# Nosotros vamos a tomar la segunda opcion, para lo cual:
+
+cp -r $muestra"_1_fastqc" /home/"usuario"/public_html/;
+
+# Una vez copiada la carpeta, podemos abrir un navegador en local
+# e ir a la URL:
+
+http://132.248.220.122/~"usuario"/"$muestra"_1_fastqc/fastqc_report.html
+
+# Tendras que sustituir "usuario" por tu nombre de usuario y
+# "$muestra" por la muestra que estes procesando en este momento.
+# Por ejemplo para mi usuario "cperez" y la muestra de callo (os_call):
+
+http://132.248.220.122/~cperez/os_call_1_fastqc/fastqc_report.html
+
+# Vamos a hacer lo mismo para el READ2
+
+fastqc --nogroup -f fastq $muestra"_2.fastq";
+
+rm $muestra"_2_fastqc.zip";
+
+cp -r $muestra"_2_fastqc" /home/"usuario"/public_html/;
+
+# Y abrimos la muestra como en el caso anterior
+
+# La explicacion de los distintos datos y graficos del informe
+# de FastQC se explicaran en la presentacion.
+
+#
+########################## 1.2) Preprocesar los reads con Trimmomatic
+#
+
+# Para tratar de mejorar la calidad de los reads del experimento
+# podemos intentar utilizar la informacion de FastQC
+# para recortar y filtrar los reads en base a la calidad,
+# la calidad por los extremos, una longitud minima, etc.
+#
+# Para preprocesar los datos, en este tutorial vamos a utilizar 
+# el programa Trimmomatic
+# http://www.usadellab.org/cms/?page=trimmomatic
+#
+# Proponemos aqui una serie de pasos a ejecutar con Trimmomatic.
+# Tras cada uno de los pasos, si estamos interesados, podemos
+# generar un nuevo informe de FastQC sobre el Fastq resultante,
+# para ver como se han modificado nuestros reads.
+#
+# Con Trimmomatic podemos realizar varios de esos pasos de una
+# sola vez, tambien, como veremos al final de este apartado.
+# 
+# Tambien os recomiendo que probeis a experimentar un poco con
+# los parametros para ver otros resultados. 
+#
+# Como vereis, yo suelo nombrar los ficheros que va generando
+# Trimmomatic, indicando de forma abreviada todos los
+# pasos que se han realido sobre ellos en orden. Esto lo podeis
+# cambiar a vuestro gusto. Yo lo hago asi como forma de documentacion
+# y porque, si hago pruebas con distintos ordenes o valores en los
+# parametros, asi puedo leerlo directamente del nombre del fichero.
+
+# Por ultimo, con Trimmomatic se puede trabajar con los pares de
+# reads en conjunto. Esto seguramente es factible en numerosos casos.
+# Sin embargo, con los datos con los que yo he trabajado el READ1 y
+# el READ2 de illumina han necesitado un preprocesamiento diferente
+# por tener distintas caracteristicas.
+#
+# Por eso, aqui haremos todo por separado para cada muestra y,
+# en cada muestra, para cada READ. Por eso ahora definimos 
+# nuestra variable para cada FastQ:
+
+muestra="os_call_1"
+
+# Deberemos luego hacerlo para el READ2 de "os_call" y
+# para los READ1 y READ2 de "os_boot".
+# Dejo en tus manos si utilizas los mismos comandos 
+# y parametros o decides modificarlos.
+
+#
+###################### 1.2.1) Ventanas de promedio de calidad
+#
+
+# En primer lugar vamos a tratar de mejorar la calidad
+# promedio buscando ventanas (segmentos de pares de bases) 
+# de baja calidad y cortando los reads desde dichas 
+# ventanas hasta el 3' (normalmente los reads suelen perder 
+# calidad hacia 3').
+#
+# El parametro que nos posibilita esto en Trimmomatic es
+# SLIDINGWINDOW:w:q
+# donde w=window_size and q=avg_quality_required
+#
+# Es decir, el parametro "w" seria el ancho de la ventana
+# a buscar, mientras "q" seria la calidad promedio a partir
+# de la cual cortar el read desde el segmento detectado hasta 3'.
+#
+# NOTA: al igual que FastQC y muchos otros programas,
+# se nos permite en Trimmomatic especificar el numero de 
+# procesadores a utilizar. Aqui vamos a especificarlos
+# porque si no Trimmomatic podria utilizar varios de ellos.
+
+# Fijate tambien que estamos especificando el tipo de calidades
+# como phred33, que es el equivalente a Illumina 1.9.
+# Tambien especificamos el nombre de fichero de entrada y de salida.
+
+# Esto deberia tardar alrededor de un minuto:
+
+java -cp /usr/local/Trimmomatic-0.32/trimmomatic-0.32.jar \
+org.usadellab.trimmomatic.TrimmomaticSE \
+-threads 1 -phred33 \
+$muestra".fastq" $muestra".wind5_28.fastq" \
+SLIDINGWINDOW:5:28;
+
+#
+####################### 1.2.2) Cortar un numero de bases
+#
+
+# A partir del resultado del paso anterior,
+# vamos a cortar unas bases por el principio de los reads,
+# que tipicamente presentan desviacion en las primeras 8-12 bases
+#
+# Usaremos el parametro HEADCROP:x para cortar desde 5' hasta la
+# posicion especificada "x".
+# Usaremos el parametro CROP:x para cortar desde la posicion 
+# especificada "x" hasta 3'.
+# NOTA: Trimmomatic ejecuta las acciones en orden, por lo que no
+# es lo mismo hacer HEADCROP y luego CROP, que al reves.
+
+java -cp /usr/local/Trimmomatic-0.32/trimmomatic-0.32.jar \
+org.usadellab.trimmomatic.TrimmomaticSE \
+-threads 1 -phred33 \
+$muestra".wind5_28.fastq" $muestra".wind5_28.12crop75.fastq" \
+CROP:75 HEADCROP:12;
+
+#
+######################### 1.2.3) Cortar los extremos por calidad
+#
+
+# Tambien podemos cortar los extremos en base a la calidad de estos
+# ya que se ha sugerido en numerosas ocasiones que precisamente los
+# extremos tienen una gran importancia en ensamblajes de novo.
+# Quizas no tanto en mapeo a una referencia.
+#
+# Usaremos los parametros LEADING:x y TRAILING:y
+# siendo "x" la calidad por debajo de la cual se corta en 5'
+# e "y" la calidad por debajo de la cual se corta en 3'.
+
+java -cp /usr/local/Trimmomatic-0.32/trimmomatic-0.32.jar \
+org.usadellab.trimmomatic.TrimmomaticSE \
+-threads 1 -phred33 \
+$muestra".wind5_28.12crop75.fastq" \
+$muestra".wind5_28.12crop75.28qual28.fastq" \
+LEADING:28 TRAILING:28;
+
+#
+####################### 1.2.4) Filtrar por longitud minima
+#
+
+# Muchos reads recortados habran quedado mas cortos
+# de lo que deseamos para nuestros analisis posteriores.
+# Por eso, vamos a quedarnos unicamente con los reads de
+# la longitud minima deseada.
+#
+# Se usa el parametro MINLEN:x
+# donde "x" es la longitud de read minima a conservar
+
+java -cp /usr/local/Trimmomatic-0.32/trimmomatic-0.32.jar \
+org.usadellab.trimmomatic.TrimmomaticSE \
+-threads 1 -phred33 \
+$muestra".wind5_28.12crop75.28qual28.fastq" \
+$muestra".wind5_28.12crop75.28qual28.mlen36.fastq" \
+MINLEN:36;
+
+#
+# Como ejecutar todo lo anterior en un solo paso
+#
+
+java -cp /usr/local/Trimmomatic-0.32/trimmomatic-0.32.jar \
+org.usadellab.trimmomatic.TrimmomaticSE \
+-threads 1 -phred33 \
+$muestra".fastq" \
+$muestra".wind5_28.12crop75.28qual28.mlen36.fastq" \
+SLIDINGWINDOW:5:28 CROP:75 HEADCROP:12 LEADING:28 TRAILING:28 MINLEN:36;
+
+# Esto es lo que se hizo en clase para obtener un resultado
+# mas o menos intermedio entre el preprocesamiento anterior
+# y los reads sin preprocesar, en cuanto a numero de reads
+# finales que obtenemos
+
+java -cp /usr/local/Trimmomatic-0.32/trimmomatic-0.32.jar \
+org.usadellab.trimmomatic.TrimmomaticSE \
+-threads 8 -phred33 \
+$muestra".fastq" \
+$muestra".wind6_24.10crop80.24qual24.mlen30.fastq" \
+SLIDINGWINDOW:6:24 CROP:80 HEADCROP:10 LEADING:24 TRAILING:24 MINLEN:30;
+
+# Ahora ya estas preparado para hacer lo mismo con el resto de
+# FastQ del READ2 o de la otra muestra, si no lo has ido haciendo ya :)
+
+#
+###################### 1.2.5) Otras capacidades de Trimmomatic
+######################		y otras caracristicas de los reads
+#
+
+# Ademas de poder trabajar directamente con los reads en 
+# parejas, con Trimmomatic tambien podemos eliminar secuencias
+# de adaptadores. Para ello se debe disponer de las secuencias
+# de adaptador que se han utilizado durante la preparacion
+# de las librerias.
+
+# Se puede modificar ademas mediante varios parametros
+# el comportamiento de este proceso y su sensibilidad.
+
+# No lo veremos en este tutorial, sin embargo.
+
+# Ademas de las secuencias de adaptador, podemos encontrarnos
+# contaminaciones en la muestra, asi como secuencias sobrerrepresentadas
+# que puedan dificultar algunos tipos de analisis, como las 
+# colas polyA para mapear reads de cDNA a una referencia genomica
+# que carece de dichas secuencias.
+# Para tratar esto se pueden adaptar algunos de los programas existentes
+# (el propio Trimmomatic, cutadapt, o similares)
+# o se pueden utilizar scripts propios mas o menos sofisticados,
+# como un simple "grep" o un "megablast" utilizando las secuencias
+# diana y luego scripts que corten los reads en las posiciones
+# detectadas.
+
+#
+###################### 1.2.6) Conclusiones y resultados
+#
+
+# Al preprocesar asi los reads ocurren varias cosas
+# - Muchos reads son eliminados completamente
+# - Esto hace que algunos reads queden sin pareja
+# - La distribucion de longitud de los reads cambia
+# - El %GC y su distribucion suele cambiar ¿Por que?
+#   http://genomebiology.com/content/12/2/R18
+#
+# Por ultimo, yo suelo quedarme solamente con el informe
+# de los reads en crudo (os_call_1_fastqc, por ejemplo) y
+# con el fichero y el informe de los reads preprocesados
+# (os_call_1.wind5_28.12crop75.28qual28.fastq y su _fastqc
+# , respectivamente)
+#
+# Para eliminar comodamente todo lo demas y seguir trabajando
+# con los resultantes, sin perder ademas todos los pasos seguidos
+# en el nombre del fichero, yo suelo:
+
+# 1: Crear un directorio donde guardar los resultados
+
+mkdir preprocess/;
+
+# 2: Mover ahi los resultados deseados
+
+mv "$muestra"*mlen36* preprocess/;
+mv $muestra"_fastqc" preprocess/;
+
+# 3: Eliminar los ficheros intermedios
+
+rm -r $muestra*_fastqc; \
+rm -r $muestra.*.fastq;
+
+# 4: Crear un enlace al fichero preprocesado
+
+ln -s preprocess/$muestra*fastq $muestra"_clean.fastq";
+
+# Ahora podrias comparar mediante informes de FastQC como eran
+# los reads en crudo y como han quedado las muestras tras el
+# preprocesamiento con Trimmomatic.
+
+#
+########################### 1.3) Correccion de bases con Musket
+#
+
+# Uno de los problemas mas comunes en los datos generados
+# con secuenciadores Illumina es la presencia de errores de
+# base calling diseminados aleatoriamente por la muestra.
+# Estos errores introducen ruido, y pueden dificultar algunos
+# procesos, como el ensamblaje o el mapeo, especialmente en zonas
+# donde hay baja profundidad de cobertura.
+#
+# Se han desarrollado diversos programas para tratar de corregir
+# esto. Nosotros vamos a utilizar Musket 
+# http://musket.sourceforge.net/homepage.htm
+
+# Musket usa como minimo 2 threads (-p 2) y tarda entre 10-20 minutos
+# Con -inorder nos aseguramos de que el orden de los reads sera el mismo 
+# antes y despues
+# Con -lowercase nos marca las bases editadas en minusculas
+# con lo que podemos asi obtener alguna estadistica
+
+muestra="os_call_1";
+
+#
+
+musket -inorder $muestra"_clean.fastq" \
+-o $muestra"_musket.fastq" -lowercase;
+
+# Reads modificados
+
+cat $muestra"_musket.fastq" | awk '{if (NR%4==2) print $0}' \
+| grep "[atgc]" > $muestra"_musket.reads_fixed";
+
+# Numero de reads modificados
+
+cat $muestra"_musket.reads_fixed" | wc -l > \
+$muestra"_musket.num_reads_fixed";
+
+# Podemos comprobar cuantos son con "cat"
+
+cat $muestra"_musket.num_reads_fixed";
+
+# Bases modificadas
+
+cat $muestra"_musket.reads_fixed" | sed 's#[ATGC]##g' > \
+$muestra"_musket.bases_fixed";
+
+# Distribucion de numero de bases modificadas
+
+cat $muestra"_musket.bases_fixed" | awk '{num=length($0); print num}' \
+| sort -n | uniq -c > $muestra"_musket.bases_fixed_dist";
+
+# Numero total de bases modificadas
+
+cat $muestra"_musket.bases_fixed_dist" | \
+awk 'BEGIN{sum=0}{sum=sum+$1*$2}END{print sum}' \
+> $muestra"_musket.num_bases_fixed";
+
+# Eliminar archivos temporales
+
+rm $muestra"_musket.reads_fixed"; \
+rm $muestra"_musket.bases_fixed";
+
+# Guardar el resto en otro directorio
+
+mkdir musket; # Crearlo solo si no existe ya
+
+mv $muestra"_musket.num_reads_fixed" \
+$muestra"_musket.bases_fixed_dist" \
+$muestra"_musket.num_bases_fixed" \
+musket;
+
+# Repite el proceso anterior para el READ2 y para la otra muestra
+
+# Ya que ahora los reads corregidos estan en un nuevo fichero FastQ,
+# vamos a liberar espacio eliminando el directorio preprocess/
+# y quitando los enlaces simbolicos a sus ficheros:
+# NOTA: recuerda dejar apuntado en alguna parte los pasos y/o
+# parametros utilizados con Trimmomatic, bien para poder repetir
+# si hiciera falta, o poder consultarlos en un momento dado.
+
+unlink os_boot_1_clean.fastq;unlink os_boot_2_clean.fastq;\
+unlink os_call_1_clean.fastq;unlink os_call_2_clean.fastq;\
+rm -r preprocess/
+
+#
+######################### 1.4) Separacion de parejas y singles
+#
+
+# Con el preprocesamiento anterior muchos reads pueden haber
+# perdido su pareja. En algunos pasos posteriores vamos a necesitar
+# tener separados los reads huerfanos o singles de los que estan
+# emparejados. Ademas, las parejas nos las pueden pedir en archivos
+# separados con los reads en el mismo orden, en un mismo archivo
+# con los reads de una pareja juntos; de distintas formas segun
+# el programa e incluso la version de este.
+#
+# Por eso vamos a dejar preparados los reads para pasos posteriores.
+# Esta tarea de organizar los reads, que en principio parece trivial,
+# depende de un correcto algoritmo de alineamiento que sea 
+# determinista al ordenar los reads (cosa que no ocurre con el "sort"
+# de linux en su configuracion por defecto) y requiere un procesamiento
+# rapido, especialmente cuando se trabaja con varias muestras
+# y cientos de millones de reads.
+
+# Utilizaremos el script split_pairs
+
+muestra="os_call";
+
+# Si los reads NO tienen el indicativo de pareja en la cabecera,
+# anyadirlo:
+
+cat $muestra"_1_musket.fastq" | \
+awk '{if (NR%4==1) print $0"/1"; else print $0}' > \
+$muestra"_1_musket_fix.fastq";
+
+cat $muestra"_2_musket.fastq" | \
+awk '{if (NR%4==1) print $0"/2"; else print $0}' > \
+$muestra"_2_musket_fix.fastq";
+
+# Juntamos todos los reads en un fichero
+cat $muestra"_1_musket_fix.fastq" $muestra"_2_musket_fix.fastq" \
+> $muestra"_musket_fix.fastq";
+
+# Ejecutamos el split_pairs para que los separe
+split_pairs -i $muestra"_musket_fix.fastq" \
+-1 $muestra"_p1.fastq" -2 $muestra"_p2.fastq" -s $muestra"_s.fastq" \
+2> $muestra"_split_pairs.out";
+
+# El fichero con la salida de split_pairs ($muestra"_split_pairs.out")
+# nos mostrara el numero de parejas encontradas y el numero de singles,
+# por ejemplo:
+
+cat $muestra"_split_pairs.out";
+
+# # total pairs of reads = 2992833 total single reads = 3135747
+
+# Ademas, habra generado los ficheros con los reads clasificados
+# en base al nombre que le hayamos indicado en los parametros,
+# bien en parejas (-1 y -2, para el READ1 y READ2 respectivamente)
+# o en singles (-s)
+
+# Vamos a borrar los otros ficheros para ahorrar espacio
+rm $muestra"_1_musket.fastq"; \
+rm $muestra"_2_musket.fastq";\
+rm $muestra*musket_fix.fastq;
+
+# Finalmente, vamos a mover los ficheros de los reads singles,
+# que no vamos a usar en este tutorial, y los ficheros de salida
+# del splitpairs:
+
+mkdir splitpairs; # Ejecutar esto si no se ha creado ya anteriormente
+mv $muestra"_s.fastq" $muestra"_split_pairs.out" splitpairs/;
+
+# Repite todo lo anterior para la otra muestra
+
+###
+
+# Hasta aqui hemos modificado nuestros datos para tratar de tener
+# la mayor calidad posible.
+#
+# A partir de ahora podremos comenzar a trabajar con ellos
+
+############################### Fin de este tutorial

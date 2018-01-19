@@ -1,0 +1,497 @@
+#
+####################### 6.1) Expresion diferencial con Cuffdiff
+#
+# Cuffdiff (es parte de Cufflinks)
+# http://cufflinks.cbcb.umd.edu/
+
+# Partimos de dos muestras diferentes
+# - Mapeamos los reads con TopHat2 a una referencia
+#	usando tambien el GFF
+# - Creamos un ensamblaje para cada muestra con Cufflinks
+# - Juntamos el ensamblaje de las muestras y el de referencia
+# 	con Cuffmerge (que utiliza Cuffcompare internamente)
+# - Finalmente lanzamos Cuffdiff utilizando los BAM de los 
+# 	alineamientos y el ensamblaje que hemos generado.
+
+cd /space16/"usuario"/;
+mkdir cuffdiff;cd cuffdiff;
+
+# Copiamos los enlaces simbolicos a la anotacion
+# y a los alineamientos que hicimos con TopHat
+#
+# He duplicado cada alineamiento para que ejecutemos
+# Cuffdiff como si tuvieramos replicas
+
+ln -s /space16/cperez/cuffdiff_samples/merged.gtf; \
+ln -s /space16/cperez/cuffdiff_samples/os_boot_tophat_1.bam; \
+ln -s /space16/cperez/cuffdiff_samples/os_boot_tophat_2.bam; \
+ln -s /space16/cperez/cuffdiff_samples/os_call_tophat_1.bam; \
+ln -s /space16/cperez/cuffdiff_samples/os_call_tophat_2.bam;
+
+# No vamos a correr nosotros Cuffdiff porque tarda
+# mas de una hora en terminar.
+# Lo ejecutariamos como sigue:
+#cuffdiff merged.gtf \
+#os_boot_tophat_1.bam,os_boot_tophat_2.bam \
+#os_call_tophat_1.bam,os_call_tophat_2.bam;
+
+# Tras la ejecucion del programa, se generan numerosos ficheros.
+# Copiamos los pregenerados:
+
+cp /space16/cperez/cuffdiff_done/*tracking ./;
+cp /space16/cperez/cuffdiff_done/*info ./;
+cp /space16/cperez/cuffdiff_done/*diff ./;
+cp /space16/cperez/cuffdiff_done/cuffData.db ./;
+
+# Los ficheros ".fpkm_tracking" contienen la expresion de
+# genes, isoformas, cds (suma para las isoformas con ese cds)
+# y tss (suma para las isoformas con un mismo TSS (Transcription
+# Start Site).
+# Los ficheros ".count_tracking" contienen la estima de la
+# cantidad de fragmentos que podria originar cada feature.
+# Los ficheros "_group_tracking" contienen los FPKM en relacion
+# a la replica.
+# Los ficheros "_exp.diff" contienen los test de expresion
+# entre muestras.
+# El fichero "splicing.diff" contendria la informacion de 
+# splicing diferencial entre muestras.
+# Para estos dos ultimos tipos de fichero se incluyen los
+# resultados del test, incluido el p-value, el p-value ajustado
+# al FDR especificado (0.05 por defecto) y finalmente
+# un "yes" o "no" segun haya significacion para el FDR tras
+# el ajuste de multiple-testing.
+# Analogos a los anteriores son "cds.diff" y "promoters.diff".
+# Si queremos consultar el identificador de las muestras
+# usado en los ficheros anteriores, podemos echar un vistazo
+# a "read_groups.info".
+# Finalmente, en run.info tenemos informacion sobre el comando
+# ejecutado y los parametros usados, por si necesitamos
+# recuperarla.
+
+# ¿Cuantos genes presentan expresion diferencial?
+
+cat gene_exp.diff | awk '{if ($14=="yes") print $0}' | wc -l
+
+# Es por tanto facil identificar sus identificadores, por lo que
+# podriamos recuperar su secuencia y utilizarla para anotacion
+# funcional, por ejemplo mediante alineamientos con Blast
+# a NCBI nr, a uniprot, con Blast2GO, etcetera.
+
+###
+
+# A continuacion, vamos a generar algunas graficas y analisis
+# estadisticos para los resultados de Cuffdiff con
+#
+# cummeRbund
+# http://compbio.mit.edu/cummeRbund/
+
+# Abrimos sesion en R desde el directorio donde tenemos los resultados
+# de Cuffdiff
+
+R
+
+# Si es necesario instalamos el paquete
+
+source("http://bioconductor.org/biocLite.R")
+biocLite("cummeRbund")
+
+# Cargamos la libreria
+
+library(cummeRbund)
+
+# Ya con cummeRbund:
+# leemos los datos, mostrando un pequenyo resumen
+
+cuff<-readCufflinks()
+cuff
+
+# Grafica de dispersion estimada para cada muestra
+# Muestra la dispersion en relacion al numero de conteos
+# de cada gen. Si hay sobredispersion, podriamos
+# sobreestimar los niveles de expresion diferencial
+# de los datos. En teoria, modelos alternativos a una
+# distribucion de Poisson, donde la varianza es igual
+# a la media, podrian manejar este tipo de datos
+# sin confundir los resultados.
+
+disp<-dispersionPlot(genes(cuff))
+disp
+
+# FPKM CV2 plot (NO FUNCIONA pero se haria asi :)
+# Permitiria ver un coeficiente de variacion
+# en relacion a la magnitud del FPKM, para cada muestra.
+# Desviaciones importantes aqui podrian significar
+# por ejemplo el perder genes expresados diferencialmente
+# por una alta variabilidad entre replicas.
+
+genes.scv<-fpkmSCVPlot(genes(cuff))
+isoforms.scv<-fpkmSCVPlot(isoforms(cuff))
+
+# csDensity plot para ver la distribucion
+# de los FPKM en las muestras
+
+dens<-csDensity(genes(cuff))
+dens
+
+# Para ver las replicas por separado:
+
+densRep<-csDensity(genes(cuff),replicates=T)
+densRep
+
+# Boxplots de los FPKMs (puede que no se vean bien 
+# en XWindows.
+
+b<-csBoxplot(genes(cuff))
+b
+
+# Se pueden separar las replicas como con los csDensity
+
+# Pairwise scatterplots para ver las diferencias de los FPKM
+# entre muestras de dos en dos
+
+s<-csScatterMatrix(genes(cuff))
+s
+
+# Scatterplot entre solo dos muestras
+
+s<-csScatter(genes(cuff),"q1","q2",smooth=T)
+s
+
+# MvsA plot para ver la diferencia de expresion
+# entre muestras
+# en relacion al conteo de los reads
+
+m<-MAplot(genes(cuff),"q1","q2")
+m
+
+# Volcano plots
+
+v<-csVolcanoMatrix(genes(cuff), "q1", "q2")
+v
+
+# Tambien permite crear GeneSets con los que realizar
+# HeatMaps y dendrogramas, asi como obtener graficas
+# para ver como varia un solo gen en las muestras
+# (por ejemplo, series temporales).
+
+mySigGeneIds<-getSig(cuff,x='q1',y='q2',alpha=0.01,level='genes')
+length(mySigGeneIds)
+
+myGenes<-getGenes(cuff, mySigGeneIds)
+
+h.rep<-csHeatmap(myGenes,cluster='both',replicates=T)
+h.rep
+
+b<-expressionBarplot(myGenes)
+b
+
+den<-csDendro(myGenes,replicates="T")
+
+# Analisis de componentes principales
+
+genes.PCA<-PCAplot(genes(cuff),"PC1","PC2",replicates="T")
+genes.PCA
+
+# Clustering de genes segun el perfil de expresion
+
+ic<-csCluster(myGenes,k=4)
+icp<-csClusterPlot(ic)
+icp
+
+# Especificidad por condiciones
+
+myGenes.spec<-csSpecificity(myGenes)
+head(myGEnes.spec)
+
+# Buscar genes con perfil parecido a otro gen
+
+mySigGeneIds
+mySimilar<-findSimilar(cuff,"XLOC_000990",n=10)
+mySimilar.expression<-expressionPlot(mySimilar,logMode=T,showErrorbars=F)
+mySimilar.expression
+
+# Salir de R
+q()
+
+#
+############################# 6.2) Estimar la expresion con RSEM 
+#
+# RSEM
+# http://deweylab.biostat.wisc.edu/rsem/
+
+# Podemos ejecutar RSEM independientemente. Esto nos permite
+# por ejemplo extraer transcritos de un genoma a partir
+# de una anotacion estructural con "rsem-prepare-reference",
+# o utilizar un BAM que hayamos generado con el mapeador
+# de nuestra eleccion, para finalmente calcular la abundancia
+# de las secuencias con "rsem-calculate-expression".
+#
+# Sin embargo, RSEM no soporta indels, lo que habra que tener
+# en cuenta al elegir el mapeador y/o los parametros de mapeo.
+#
+# Por otro lado, con Trinity
+# es muy comodo ejecutarlo con el script que nos proporciona
+# en su instalacion:
+
+cd /space16/"usuario"/;
+mkdir rsem;cd rsem;
+
+# Vamos a ejecutar el programa para la primera muestra:
+
+muestra="os_call_1";
+
+# Hacemos enlaces a los reads pareados preprocesados 
+# y el ensamblaje de novo
+
+ln -s /space16/cperez/rsem_samples/$muestra"_p1.fastq"; \
+ln -s /space16/cperez/rsem_samples/$muestra"_p2.fastq";
+
+ln -s /space16/cperez/rsem_samples/os_call_trinity.fasta;
+
+# NOTA: como los ensamblajes hechos con Trinity han sido 
+# independientes, se han generado los contigs con distintos
+# identificadores. Por tanto, si RSEM obtiene estima las 
+# abundancias lo hara en base a esos identificadores,
+# por lo que no habra forma de relacionar la expresion
+# de unas muestras y otras. En este caso, podriamos hacer
+# un ensamblaje con los reads de todas las muestras, por
+# ejemplo. Nosotros usaremos solo el ensamblaje de una de
+# las muestras, esperando que sea suficientemente 
+# representativo para las dos.
+
+# Ejecutamos el script de Trinity para el RSEM, que basicamente
+# se encarga de ir ejecutando los scripts necesarios
+#
+# La salida vendra precedida por lo que indiquemos en --prefix
+
+# (Si alguien va retrasado o quiere saltarse la espera, puede
+# sustituir la linea siguiente, por la comentada de mas abajo
+# donde se usa "cp" para copiar los resultados)
+
+/usr/local/trinity/util/RSEM_util/run_RSEM_align_n_estimate.pl \
+--transcripts os_call_trinity.fasta --seqType fq \
+--left $muestra"_p1.fastq" --right $muestra"_p2.fastq" \
+--prefix $muestra"_RSEM";
+
+cp -r /space16/cperez/rsem_done/$muestra"_RSEM"* ./
+
+# La salida del programa consta de:
+# - Los alineamientos y su version ordenada e indexada, en BAM
+# - La tabla de resultados de los genes (subcomponentes de Trinity)
+# - La tabla de resultados de las isoformas (secuencias de Trinity)
+# - Un directorio ".stat"
+
+# Los resultados que nos interesan ahora son las dos tablas,
+# que contienen los valores estimados de expresion.
+#
+# Tanto para genes como para isoformas la expresion aparece
+# estimada en TPM y FPKM. Basicamente tienen el mismo formato
+# salvo que la tabla de isoformas incluye un campo IsoPct.
+#
+# El TPM (trasncritos por millon) es una medida que parece 
+# tener mas aceptacion que FPKM, al menos para medir la 
+# abundancia relativa de los genes.
+# El total de TPM para todos los transcritos es 1 millon.
+# Puedes ver la definicion de RSEM en:
+# http://deweylab.biostat.wisc.edu/rsem/rsem-calculate-expression.html#output
+#
+# IsoPct seria el porcentaje de abundancia de este transcrito
+# respecto de la abundancia total del gen.
+#
+# El campo expected_count seria la suma de probabilidades 
+# de que los reads provengan de este transcrito.
+
+###
+
+# Hacemos las demas muestras:
+
+muestra="os_call_2"; \
+ln -s /space16/cperez/rsem_samples/$muestra"_p1.fastq"; \
+ln -s /space16/cperez/rsem_samples/$muestra"_p2.fastq";
+
+# Para no esperar vamos a copiar los datos, pero normalmente
+# hariamos esto:
+#/usr/local/trinity/util/RSEM_util/run_RSEM_align_n_estimate.pl \
+#--transcripts os_call_trinity.fasta --seqType fq \
+#--left $muestra"_p1.fastq" --right $muestra"_p2.fastq" \
+#--prefix $muestra"_RSEM";
+
+cp -r /space16/cperez/rsem_done/$muestra"_RSEM"* ./
+
+muestra="os_boot_1"; \
+ln -s /space16/cperez/rsem_samples/$muestra"_p1.fastq"; \
+ln -s /space16/cperez/rsem_samples/$muestra"_p2.fastq";
+
+#/usr/local/trinity/util/RSEM_util/run_RSEM_align_n_estimate.pl \
+#--transcripts os_call_trinity.fasta --seqType fq \
+#--left $muestra"_p1.fastq" --right $muestra"_p2.fastq" \
+#--prefix $muestra"_RSEM";
+
+cp -r /space16/cperez/rsem_done/$muestra"_RSEM"* ./
+
+muestra="os_boot_2"; \
+ln -s /space16/cperez/rsem_samples/$muestra"_p1.fastq"; \
+ln -s /space16/cperez/rsem_samples/$muestra"_p2.fastq";
+
+#/usr/local/trinity/util/RSEM_util/run_RSEM_align_n_estimate.pl \
+#--transcripts os_call_trinity.fasta --seqType fq \
+#--left $muestra"_p1.fastq" --right $muestra"_p2.fastq" \
+#--prefix $muestra"_RSEM";
+
+cp -r /space16/cperez/rsem_done/$muestra"_RSEM"* ./
+
+#
+# Separando los conteos para usarlos en programas
+# que parten de ellos para el analisis, como edgeR, ebseq, DESeq
+
+# Creamos la tabla de conteos para los genes
+
+for muestra in os_call_1 os_call_2 os_boot_1 os_boot_2; do \
+cat $muestra"_RSEM.genes.results" | cut -f 1,5 \
+| sed 's#\..*##' | grep "^comp" \
+> "R_"$muestra".genes"; \
+done
+
+# Y para las isoformas
+
+for muestra in os_call_1 os_call_2 os_boot_1 os_boot_2;	do \
+cat $muestra"_RSEM.isoforms.results" | cut -f 1,5 \
+| sed 's#\..*##' | grep "^comp" \
+> "R_"$muestra".isoforms"; \
+done
+
+# Juntamos los datos de los genes en una sola tabla
+
+join R_os_call_1.genes R_os_call_2.genes > R_os_call.genes;\
+join R_os_boot_1.genes R_os_boot_2.genes > R_os_boot.genes;\
+join R_os_call.genes R_os_boot.genes > R.genes;\
+head R.genes
+
+# Lo mismo para las isoformas
+
+join R_os_call_1.isoforms R_os_call_2.isoforms > R_os_call.isoforms;\
+join R_os_boot_1.isoforms R_os_boot_2.isoforms > R_os_boot.isoforms;\
+join R_os_call.isoforms R_os_boot.isoforms > R.isoforms;\
+head R.isoforms
+
+# Lo ponemos separado por tabuladores
+
+cat R.genes | tr " " "\t" > tmp && mv tmp R.genes;\
+cat R.isoforms | tr " " "\t" > tmp && mv tmp R.isoforms;
+
+# Entramos en R
+
+R
+
+### Cargamos el edgeR
+#
+# Segun sus autores, no existe efecto de muestra que haya que
+# normalizar cuando se quieren comparar cambios relativos de
+# expresion. Por eso, edgeR trabaja a partir de conteos.
+#
+# Por otro lado, se adapta automaticamente a diferentes 
+# tamanyos de libreria, y por tanto puede trabajar con
+# diferentes profundidades de secuenciacion.
+#
+# 
+
+library(edgeR)
+
+# Cargamos los genes
+
+rsem_genes<-read.delim("R.genes",row.names=1)
+
+# Asignamos los grupos
+
+group <- factor(c(1,1,2,2))
+
+# Comenzamos a trabajar con (classic) edgeR cargando el DGEList
+
+y <- DGEList(counts=rsem_genes,group=group)
+dim(y)
+
+# Filtramos los transcritos muy poco expresados
+
+keep <- rowSums(cpm(y)>1) >= 3
+y <- y[keep,]
+dim(y)
+
+# El efecto de la composicion de RNA se trata con la funcion
+# calcNormFactors. En RNASeq se los genes muy expresados en
+# una muestra pero no en otra hace que los esten menos
+# representados en la muestra. Por eso, edgeR calcula
+# un tamanyo efectivo de libreria para normalizar la composicion
+# de RNA en base a factores de escala obtenidos mediante 
+# TMM (trimmed mean of M-values) para cada par de muestras.
+
+y <- calcNormFactors(y)
+
+# Vemos los factores de normalizacion
+
+y$samples
+
+# Exploracion de las distancias entre muestras, en terminos
+# de BCV (coeficiente de variacion biologica)
+
+plotMDS(y)
+
+# Si todos los valores son cercanos a 1
+# indica que las cuatro librerias son similares en
+# composicion
+
+# Calcula las qCML common dispersions usando el modelo 
+# de la binomial negativa. Se estima asi un parametro
+# para cada transcrito que mide su grado de variacion
+# de unas librerias a otras
+
+y <- estimateCommonDisp(y, verbose=TRUE)
+
+# ¿Que porcentaje de variacion biolica tenemos en nuestras
+# muestras?
+
+# Calcula las qCML tagwise dispersions
+
+y <- estimateTagwiseDisp(y)
+
+plotBCV(y) # CPM (counts-per-million) vs BCV
+
+# Nos daria una idea de la dispersion observada en relacion
+# a la abundancia de los transcritos
+
+# OJO: qCML solo es aplicable en experimentos de un 
+# solo factor! Para experimentos mas complicados hay que
+# utilizar los metodos GLMs (Generalized Linear Models)
+# de edgeR (glm edgeR), que no vamos a ver en este tutorial.
+
+# Test para la distribucion binomial negativa
+
+et <- exactTest(y)
+
+# topTags nos muestra los n transcritos con resultado mas significativo
+
+topTags(et, n=10)
+
+# Vamos a ver los counts-per-million para esos transcritos
+
+detags <- rownames(topTags(et, n=10))
+cpm(y)[detags,]
+
+# Deberian verse diferencias claras entre ambos tratamientos
+
+# El numero de genes diferencialmente expresados para FDR<0.05:
+
+summary(de <- decideTestsDGE(et, p=0.05, adjust="BH"))
+
+# -1 reprimido
+# 0 sin diferencia
+# 1 sobreexpresado
+
+# CPM vs FC (fold-changes)
+
+detags <- rownames(y)[as.logical(de)]
+plotSmear(et, de.tags=detags)
+abline(h = c(-2, 2), col = "blue")
+
+#
+#
+### Eso es todo amigos :) ha sido un placer estar con ustedes :)
